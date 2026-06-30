@@ -1,0 +1,287 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Beaconblitz Staff — Attendance</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.10.0/dist/tabler-icons.min.css">
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#0f172a;min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:20px}
+
+/* Logo */
+.bb-logo{display:flex;align-items:center;gap:8px;margin-bottom:20px}
+.bb-icon{width:32px;height:32px;background:#3b82f6;border-radius:9px;display:flex;align-items:center;justify-content:center;color:#fff;font-size:16px}
+.bb-name{font-size:13px;font-weight:600;color:#64748b}
+
+/* Card */
+.card{background:#1e293b;border:1px solid #334155;border-radius:22px;padding:28px 22px;width:100%;max-width:360px;text-align:center}
+
+/* ── SCREEN: REGISTER ── */
+.reg-title{font-size:20px;font-weight:700;color:#f1f5f9;margin-bottom:6px}
+.reg-sub{font-size:13px;color:#64748b;margin-bottom:22px;line-height:1.5}
+.search-wrap{position:relative;text-align:left;margin-bottom:14px}
+.search-input{width:100%;padding:13px 14px 13px 40px;border:1.5px solid #334155;border-radius:12px;background:#0f172a;color:#f1f5f9;font-size:14px;outline:none;transition:border-color .15s}
+.search-input:focus{border-color:#3b82f6}
+.search-input::placeholder{color:#475569}
+.search-icon{position:absolute;left:13px;top:50%;transform:translateY(-50%);color:#475569;font-size:18px;pointer-events:none}
+.dropdown{display:none;position:absolute;width:100%;background:#1e293b;border:1.5px solid #3b82f6;border-radius:12px;margin-top:6px;overflow:hidden;z-index:20;box-shadow:0 12px 32px rgba(0,0,0,.5)}
+.emp-opt{display:flex;align-items:center;gap:12px;padding:12px 14px;cursor:pointer;border-bottom:1px solid #334155;transition:background .1s}
+.emp-opt:last-child{border-bottom:none}
+.emp-opt:hover,.emp-opt:active{background:#334155}
+.opt-avatar{width:36px;height:36px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;color:#fff;flex-shrink:0}
+.opt-name{font-size:13px;font-weight:600;color:#f1f5f9;text-align:left}
+.opt-role{font-size:11px;color:#64748b;text-align:left}
+.reg-note{font-size:11px;color:#334155;margin-top:8px;line-height:1.5}
+
+/* ── SCREEN: CHECKIN (known user) ── */
+.emp-avatar-big{width:76px;height:76px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:26px;font-weight:700;color:#fff;margin:0 auto 12px;box-shadow:0 0 0 4px #0f172a,0 0 0 6px #334155}
+.emp-name{font-size:21px;font-weight:700;color:#f1f5f9;margin-bottom:3px}
+.emp-role{font-size:12px;color:#64748b}
+.not-me{background:none;border:none;color:#475569;font-size:11px;margin-top:8px;cursor:pointer;text-decoration:underline;padding:4px}
+.not-me:hover{color:#94a3b8}
+
+.divider{height:1px;background:#334155;margin:18px 0}
+
+.time-big{font-size:42px;font-weight:700;color:#f1f5f9;letter-spacing:-1px;line-height:1;font-variant-numeric:tabular-nums}
+.date-small{font-size:12px;color:#64748b;margin-top:5px}
+.loc-row{display:inline-flex;align-items:center;gap:5px;background:#0f172a;border:1px solid #334155;padding:5px 12px;border-radius:20px;font-size:11px;color:#94a3b8;margin-top:10px}
+.loc-dot{width:6px;height:6px;border-radius:50%;background:#10b981;flex-shrink:0}
+
+.action-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:20px}
+.action-btn{padding:16px 10px;border-radius:14px;border:1.5px solid #334155;background:#0f172a;color:#94a3b8;font-size:13px;font-weight:600;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:6px;transition:all .18s;-webkit-tap-highlight-color:transparent;user-select:none}
+.action-btn i{font-size:24px}
+.action-btn.in  {border-color:#10b981;background:rgba(16,185,129,.09);color:#10b981}
+.action-btn.out {border-color:#ef4444;background:rgba(239,68,68,.09);color:#ef4444}
+.action-btn.brk {border-color:#f59e0b;background:rgba(245,158,11,.09);color:#f59e0b}
+.action-btn.wfh {border-color:#8b5cf6;background:rgba(139,92,246,.09);color:#8b5cf6}
+.action-btn:active{transform:scale(.95);opacity:.85}
+
+/* ── SCREEN: SUCCESS ── */
+.success-ring{width:96px;height:96px;border-radius:50%;display:flex;align-items:center;justify-content:center;margin:0 auto 14px;font-size:42px}
+.success-ring.in  {background:rgba(16,185,129,.12);color:#10b981;border:3px solid #10b981}
+.success-ring.out {background:rgba(239,68,68,.12);color:#ef4444;border:3px solid #ef4444}
+.success-ring.brk {background:rgba(245,158,11,.12);color:#f59e0b;border:3px solid #f59e0b}
+.success-ring.wfh {background:rgba(139,92,246,.12);color:#8b5cf6;border:3px solid #8b5cf6}
+.s-label{font-size:12px;color:#64748b;margin-bottom:3px}
+.s-time{font-size:40px;font-weight:700;color:#3b82f6;line-height:1;letter-spacing:-1px}
+.s-msg{font-size:15px;font-weight:600;color:#f1f5f9;margin:12px 0 4px}
+.s-sub{font-size:12px;color:#64748b}
+.back-btn{margin-top:18px;padding:11px 26px;border-radius:11px;border:1px solid #334155;background:#0f172a;color:#94a3b8;font-size:12px;cursor:pointer}
+
+/* Screens */
+.screen{display:none}
+.screen.active{display:block}
+</style>
+</head>
+<body>
+
+<div class="bb-logo">
+  <div class="bb-icon"><i class="ti ti-bolt"></i></div>
+  <div class="bb-name">Beaconblitz Staff</div>
+</div>
+
+<div class="card">
+
+  <!-- SCREEN 1: First-time register -->
+  <div class="screen" id="scRegister">
+    <div class="reg-title">Who are you?</div>
+    <div class="reg-sub">ആദ്യത്തെ തവണ മാത്രം select ചെയ്‌താൽ മതി.<br>പിന്നെ scan ചെയ്‌താൽ auto ആകും.</div>
+    <div class="search-wrap">
+      <i class="ti ti-search search-icon"></i>
+      <input class="search-input" id="searchInput" placeholder="Type your name..." autocomplete="off">
+      <div class="dropdown" id="dropdown"></div>
+    </div>
+    <div class="reg-note">Your phone remembers you after this ✓</div>
+  </div>
+
+  <!-- SCREEN 2: Known user — choose action -->
+  <div class="screen" id="scCheckin">
+    <div class="emp-avatar-big" id="empAvatar"></div>
+    <div class="emp-name" id="empName">--</div>
+    <div class="emp-role" id="empRole">--</div>
+    <button class="not-me" onclick="forgetMe()">Not me? Switch account</button>
+
+    <div class="divider"></div>
+
+    <div class="time-big" id="clock">--:--</div>
+    <div class="date-small" id="dateLabel"></div>
+    <div class="loc-row"><div class="loc-dot"></div><span>Beaconblitz Academy, Kozhikode</span></div>
+
+    <div class="action-grid">
+      <button class="action-btn in"  onclick="mark('in')"><i class="ti ti-login"></i>Check In</button>
+      <button class="action-btn out" onclick="mark('out')"><i class="ti ti-logout"></i>Check Out</button>
+      <button class="action-btn brk" onclick="mark('brk')"><i class="ti ti-coffee"></i>Break</button>
+      <button class="action-btn wfh" onclick="mark('wfh')"><i class="ti ti-home"></i>WFH</button>
+    </div>
+  </div>
+
+  <!-- SCREEN 3: Success -->
+  <div class="screen" id="scSuccess">
+    <div class="success-ring" id="sRing"></div>
+    <div class="s-label" id="sLabel"></div>
+    <div class="s-time" id="sTime"></div>
+    <div class="s-msg" id="sMsg"></div>
+    <div class="s-sub" id="sSub"></div>
+    <button class="back-btn" onclick="goBack()"><i class="ti ti-arrow-left"></i> Back</button>
+  </div>
+
+</div>
+
+<script>
+/* ── Employee list ── */
+const EMPLOYEES = [
+  {id:'BBST-0042',name:'Mohammad Aslaj',dept:'Admin',role:'Super Admin',color:'#1e40af',initials:'MA'},
+  {id:'BBST-0001',name:'Arjun Menon',dept:'Teaching',role:'Sr. Trainer',color:'#059669',initials:'AM'},
+  {id:'BBST-0002',name:'Priya Nair',dept:'Teaching',role:'Trainer',color:'#7c3aed',initials:'PN'},
+  {id:'BBST-0003',name:'Rahul Dev',dept:'Operations',role:'Coordinator',color:'#d97706',initials:'RD'},
+  {id:'BBST-0004',name:'Fathima Ali',dept:'Sales',role:'Field Executive',color:'#db2777',initials:'FA'},
+  {id:'BBST-0005',name:'Vinod Kumar',dept:'Teaching',role:'Trainer',color:'#0284c7',initials:'VK'},
+  {id:'BBST-0006',name:'Anjali Raj',dept:'Admin',role:'HR Executive',color:'#16a34a',initials:'AR'},
+  {id:'BBST-0007',name:'Suresh Babu',dept:'Operations',role:'Field Staff',color:'#dc2626',initials:'SB'},
+];
+
+const STORAGE_KEY = 'bb_my_employee_id';
+let currentEmp = null;
+let clockTimer = null;
+
+/* ── Boot ── */
+function boot(){
+  const savedId = localStorage.getItem(STORAGE_KEY);
+  if(savedId){
+    const emp = EMPLOYEES.find(e=>e.id===savedId);
+    if(emp){ loadCheckinScreen(emp); return; }
+  }
+  show('scRegister');
+}
+
+/* ── Screen helper ── */
+function show(id){
+  document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active'));
+  document.getElementById(id).classList.add('active');
+}
+
+/* ── Search / Register ── */
+const searchInput = document.getElementById('searchInput');
+const dropdown = document.getElementById('dropdown');
+
+searchInput.addEventListener('input', function(){
+  const q = this.value.toLowerCase().trim();
+  if(!q){dropdown.style.display='none';return;}
+  const hits = EMPLOYEES.filter(e=>
+    e.name.toLowerCase().includes(q) || e.id.toLowerCase().includes(q) || e.dept.toLowerCase().includes(q)
+  );
+  if(!hits.length){dropdown.style.display='none';return;}
+  dropdown.innerHTML = hits.map(e=>`
+    <div class="emp-opt" onclick="registerAndLoad('${e.id}')">
+      <div class="opt-avatar" style="background:${e.color}">${e.initials}</div>
+      <div>
+        <div class="opt-name">${e.name}</div>
+        <div class="opt-role">${e.role} · ${e.dept}</div>
+      </div>
+    </div>`).join('');
+  dropdown.style.display='block';
+});
+
+document.addEventListener('click', e=>{
+  if(!e.target.closest('.search-wrap')) dropdown.style.display='none';
+});
+
+function registerAndLoad(id){
+  localStorage.setItem(STORAGE_KEY, id);
+  dropdown.style.display='none';
+  searchInput.value='';
+  const emp = EMPLOYEES.find(e=>e.id===id);
+  loadCheckinScreen(emp);
+}
+
+/* ── Check-in screen ── */
+function loadCheckinScreen(emp){
+  currentEmp = emp;
+  document.getElementById('empAvatar').style.background = emp.color;
+  document.getElementById('empAvatar').textContent = emp.initials;
+  document.getElementById('empName').textContent = emp.name;
+  document.getElementById('empRole').textContent = emp.role + ' · ' + emp.dept;
+  show('scCheckin');
+  startClock();
+}
+
+function startClock(){
+  if(clockTimer) clearInterval(clockTimer);
+  function tick(){
+    const now = new Date();
+    document.getElementById('clock').textContent =
+      now.toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit',second:'2-digit'});
+    document.getElementById('dateLabel').textContent =
+      now.toLocaleDateString('en-IN',{weekday:'long',day:'numeric',month:'long',year:'numeric'});
+  }
+  tick(); clockTimer = setInterval(tick,1000);
+}
+
+function forgetMe(){
+  if(confirm('Remove your account from this device?')){
+    localStorage.removeItem(STORAGE_KEY);
+    currentEmp=null;
+    clearInterval(clockTimer);
+    show('scRegister');
+  }
+}
+
+/* ── Mark attendance ── */
+const ACTION_CFG = {
+  in:  {icon:'<i class="ti ti-check"></i>', label:'Checked In At',  msg:'Marked Present ✓',         sub:'Have a productive day!',         cls:'in'},
+  out: {icon:'<i class="ti ti-logout"></i>',label:'Checked Out At', msg:'See you tomorrow!',         sub:'Attendance recorded ✓',         cls:'out'},
+  brk: {icon:'<i class="ti ti-coffee"></i>',label:'Break Started',  msg:'Enjoy your break!',         sub:'Check back in after break',     cls:'brk'},
+  wfh: {icon:'<i class="ti ti-home"></i>',  label:'WFH Logged At',  msg:'Working From Home ✓',       sub:'Stay productive 🏡',             cls:'wfh'},
+};
+
+function mark(action){
+  const now = new Date();
+  const timeStr = now.toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit'});
+  const dateStr = now.toLocaleDateString('en-IN',{day:'2-digit',month:'short',year:'numeric'});
+  const emp = currentEmp;
+
+  /* Save record */
+  const record = {
+    empId:emp.id, name:emp.name, dept:emp.dept, role:emp.role,
+    color:emp.color, initials:emp.initials,
+    action, time:timeStr, date:dateStr, timestamp:now.toISOString(), note:''
+  };
+  let logs = JSON.parse(localStorage.getItem('bb_attendance_log')||'[]');
+  logs.unshift(record);
+  localStorage.setItem('bb_attendance_log', JSON.stringify(logs));
+
+  let today = JSON.parse(localStorage.getItem('bb_today_status')||'{}');
+  if(!today[emp.id]) today[emp.id]={};
+  const statusMap = {in:'present',out:'checked-out',brk:'break',wfh:'wfh'};
+  if(action==='in'||action==='wfh') today[emp.id].in=timeStr;
+  if(action==='out') today[emp.id].out=timeStr;
+  if(action==='brk') today[emp.id].break=timeStr;
+  today[emp.id].status=statusMap[action];
+  today[emp.id].name=emp.name; today[emp.id].dept=emp.dept;
+  today[emp.id].color=emp.color; today[emp.id].initials=emp.initials;
+  localStorage.setItem('bb_today_status',JSON.stringify(today));
+  localStorage.setItem('bb_last_update',now.toISOString());
+
+  /* Show success */
+  clearInterval(clockTimer);
+  const c = ACTION_CFG[action];
+  document.getElementById('sRing').className='success-ring '+c.cls;
+  document.getElementById('sRing').innerHTML=c.icon;
+  document.getElementById('sLabel').textContent=c.label;
+  document.getElementById('sTime').textContent=timeStr;
+  document.getElementById('sMsg').textContent=c.msg;
+  document.getElementById('sSub').textContent=c.sub;
+  show('scSuccess');
+}
+
+function goBack(){
+  show('scCheckin');
+  startClock();
+}
+
+boot();
+</script>
+</body>
+</html>

@@ -1,0 +1,339 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Beaconblitz Staff — Admin Dashboard</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.10.0/dist/tabler-icons.min.css">
+<style>
+:root{--primary:#1e40af;--primary-light:#3b82f6;--primary-dark:#1e3a8a;--primary-bg:#eff6ff;--success:#10b981;--success-bg:#ecfdf5;--warning:#f59e0b;--warning-bg:#fffbeb;--danger:#ef4444;--danger-bg:#fef2f2;--purple:#8b5cf6;--surface:#ffffff;--surface-1:#f8fafc;--surface-2:#f1f5f9;--text:#0f172a;--text-secondary:#475569;--text-muted:#94a3b8;--border:#e2e8f0;--radius:8px}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#f1f5f9;color:var(--text);font-size:14px}
+.topbar{background:#0f172a;color:#e2e8f0;padding:0 24px;height:60px;display:flex;align-items:center;gap:16px;position:sticky;top:0;z-index:50}
+.logo-icon{width:32px;height:32px;background:var(--primary-light);border-radius:8px;display:flex;align-items:center;justify-content:center;color:#fff;font-size:16px}
+.logo-text{font-size:14px;font-weight:600}
+.live-badge{display:flex;align-items:center;gap:6px;background:rgba(16,185,129,.15);border:1px solid rgba(16,185,129,.3);padding:4px 12px;border-radius:20px;font-size:12px;color:#10b981;margin-left:8px}
+.live-dot{width:6px;height:6px;border-radius:50%;background:#10b981;animation:blink 1.2s infinite}
+@keyframes blink{0%,100%{opacity:1}50%{opacity:.3}}
+.topbar-right{margin-left:auto;display:flex;align-items:center;gap:12px;font-size:12px;color:#64748b}
+.btn{display:inline-flex;align-items:center;gap:6px;padding:7px 14px;border-radius:var(--radius);font-size:13px;font-weight:500;cursor:pointer;border:1px solid var(--border);background:var(--surface);color:var(--text);transition:all .15s;text-decoration:none}
+.btn:hover{background:var(--surface-1)}
+.btn-primary{background:var(--primary);color:#fff;border-color:var(--primary)}
+.btn-primary:hover{background:var(--primary-dark)}
+.btn-sm{padding:5px 10px;font-size:12px}
+.content{padding:24px;max-width:1300px;margin:0 auto}
+.section-title{font-size:18px;font-weight:700;color:var(--text);margin-bottom:4px}
+.section-sub{font-size:13px;color:var(--text-muted);margin-bottom:20px}
+.stats-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:14px;margin-bottom:24px}
+.stat-card{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:16px 18px}
+.stat-label{font-size:11px;color:var(--text-muted);font-weight:500;margin-bottom:8px;display:flex;align-items:center;gap:5px}
+.stat-value{font-size:28px;font-weight:700;color:var(--text);line-height:1}
+.card{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:20px}
+.card-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:16px}
+.card-title{font-size:14px;font-weight:600}
+.grid-7-3{display:grid;grid-template-columns:7fr 3fr;gap:20px}
+table{width:100%;border-collapse:collapse}
+th{text-align:left;padding:10px 12px;font-size:11px;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:.05em;border-bottom:1px solid var(--border);background:var(--surface-1)}
+td{padding:12px 12px;font-size:13px;border-bottom:1px solid var(--border);vertical-align:middle}
+tr:hover td{background:var(--surface-1)}
+tr:last-child td{border-bottom:none}
+.badge{display:inline-flex;align-items:center;gap:4px;padding:3px 9px;border-radius:20px;font-size:11px;font-weight:500}
+.badge-success{background:var(--success-bg);color:#065f46}
+.badge-danger{background:var(--danger-bg);color:#991b1b}
+.badge-warning{background:var(--warning-bg);color:#92400e}
+.badge-primary{background:var(--primary-bg);color:var(--primary-dark)}
+.badge-purple{background:#f5f3ff;color:#5b21b6}
+.badge-gray{background:var(--surface-2);color:var(--text-secondary)}
+.avatar{width:32px;height:32px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:600;color:#fff;flex-shrink:0}
+.log-item{display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid var(--border)}
+.log-item:last-child{border-bottom:none}
+.log-name{font-size:13px;font-weight:500}
+.log-meta{font-size:11px;color:var(--text-muted)}
+.pulse-green{display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--success);position:relative}
+.pulse-green::after{content:'';position:absolute;inset:-3px;border-radius:50%;border:2px solid var(--success);opacity:.4;animation:pulse 1.5s infinite}
+@keyframes pulse{0%,100%{transform:scale(1);opacity:.4}50%{transform:scale(1.5);opacity:0}}
+.qr-section{background:#0f172a;border-radius:16px;padding:24px;color:#e2e8f0;text-align:center}
+.qr-box{width:180px;height:180px;background:#fff;border-radius:12px;margin:16px auto;display:flex;align-items:center;justify-content:center;position:relative;overflow:hidden}
+.qr-pattern{position:absolute;inset:8px;display:grid;grid-template-columns:repeat(10,1fr);gap:2px}
+.qr-cell{border-radius:1px}
+.qr-url{font-size:12px;color:#64748b;margin-top:8px;word-break:break-all;font-family:monospace;background:#1e293b;padding:8px 12px;border-radius:8px}
+.qr-label{font-size:13px;color:#94a3b8;margin-bottom:4px}
+.qr-title{font-size:16px;font-weight:600;margin-bottom:4px}
+.qr-sub{font-size:12px;color:#64748b}
+.empty-state{text-align:center;padding:32px;color:var(--text-muted)}
+.empty-state i{font-size:40px;display:block;margin-bottom:8px}
+.toast{position:fixed;top:72px;right:20px;background:#0f172a;color:#e2e8f0;padding:12px 18px;border-radius:10px;font-size:13px;display:flex;align-items:center;gap:10px;z-index:999;transform:translateX(120%);transition:transform .3s;border:1px solid #334155;max-width:300px}
+.toast.show{transform:translateX(0)}
+.toast-icon{width:28px;height:28px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:14px;flex-shrink:0}
+@media(max-width:768px){.grid-7-3{grid-template-columns:1fr}.stats-grid{grid-template-columns:1fr 1fr}}
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <div class="logo-icon"><i class="ti ti-bolt"></i></div>
+  <div class="logo-text">Beaconblitz Staff</div>
+  <div class="live-badge"><div class="live-dot"></div> Live</div>
+  <div class="topbar-right">
+    <span id="topClock"></span>
+    <a href="checkin.html" target="_blank" class="btn btn-primary btn-sm">
+      <i class="ti ti-qrcode"></i> Open Check-In Page
+    </a>
+  </div>
+</div>
+
+<!-- Toast notification -->
+<div class="toast" id="toast">
+  <div class="toast-icon" id="toastIcon"></div>
+  <div id="toastText"></div>
+</div>
+
+<div class="content">
+  <div style="display:flex;align-items:flex-start;justify-content:space-between;flex-wrap:wrap;gap:12px;margin-bottom:20px">
+    <div>
+      <div class="section-title">Attendance Dashboard</div>
+      <div class="section-sub" id="todayDate">Real-time updates when staff scan QR code</div>
+    </div>
+    <div style="display:flex;gap:8px">
+      <button class="btn btn-sm" onclick="clearData()"><i class="ti ti-trash"></i> Clear Demo Data</button>
+      <button class="btn btn-sm" onclick="exportCSV()"><i class="ti ti-download"></i> Export CSV</button>
+    </div>
+  </div>
+
+  <!-- Stats -->
+  <div class="stats-grid">
+    <div class="stat-card"><div class="stat-label"><i class="ti ti-users" style="color:var(--primary-light)"></i>Total Staff</div><div class="stat-value" id="statTotal">8</div></div>
+    <div class="stat-card"><div class="stat-label"><i class="ti ti-check" style="color:var(--success)"></i>Present</div><div class="stat-value" id="statPresent" style="color:var(--success)">0</div></div>
+    <div class="stat-card"><div class="stat-label"><i class="ti ti-logout" style="color:var(--text-muted)"></i>Checked Out</div><div class="stat-value" id="statOut" style="color:var(--text-muted)">0</div></div>
+    <div class="stat-card"><div class="stat-label"><i class="ti ti-coffee" style="color:var(--warning)"></i>On Break</div><div class="stat-value" id="statBreak" style="color:var(--warning)">0</div></div>
+    <div class="stat-card"><div class="stat-label"><i class="ti ti-x" style="color:var(--danger)"></i>Not In Yet</div><div class="stat-value" id="statAbsent" style="color:var(--danger)">8</div></div>
+  </div>
+
+  <div class="grid-7-3">
+    <div>
+      <!-- Today's status table -->
+      <div class="card" style="margin-bottom:20px">
+        <div class="card-header">
+          <div>
+            <div class="card-title">Today's Status</div>
+            <div style="font-size:11px;color:var(--text-muted)" id="lastUpdate">Waiting for check-ins...</div>
+          </div>
+          <button class="btn btn-sm" onclick="renderAll()"><i class="ti ti-refresh"></i> Refresh</button>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Employee</th><th>Department</th><th>Check In</th><th>Check Out</th><th>Break</th><th>Status</th></tr></thead>
+            <tbody id="statusTable"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Live activity log -->
+      <div class="card">
+        <div class="card-header">
+          <div class="card-title">Live Activity Log</div>
+          <span class="badge badge-success" style="font-size:10px"><span class="pulse-green" style="margin-right:4px;vertical-align:middle"></span>Real-time</span>
+        </div>
+        <div id="activityLog">
+          <div class="empty-state"><i class="ti ti-clock"></i>No activity yet today</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Right: QR code + stats -->
+    <div>
+      <div class="qr-section" style="margin-bottom:16px">
+        <div class="qr-title">Office QR Code</div>
+        <div class="qr-sub">Staff scan this to mark attendance</div>
+        <div class="qr-box" id="qrBox"></div>
+        <div class="qr-label">Check-in page URL:</div>
+        <div class="qr-url" id="qrUrl">checkin.html</div>
+        <div style="display:flex;gap:8px;margin-top:14px">
+          <button class="btn btn-sm" style="flex:1;background:#1e293b;border-color:#334155;color:#e2e8f0" onclick="printQR()"><i class="ti ti-printer"></i> Print</button>
+          <button class="btn btn-sm" style="flex:1;background:var(--primary);border-color:var(--primary);color:#fff" onclick="downloadQR()"><i class="ti ti-download"></i> Save</button>
+        </div>
+      </div>
+
+      <!-- Dept summary -->
+      <div class="card">
+        <div class="card-title" style="margin-bottom:14px">Department Summary</div>
+        <div id="deptSummary"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+const EMPLOYEES = [
+  {id:'BBST-0042',name:'Mohammad Aslaj',dept:'Admin',role:'Super Admin',color:'#1e40af',initials:'MA'},
+  {id:'BBST-0001',name:'Arjun Menon',dept:'Teaching',role:'Sr. Trainer',color:'#059669',initials:'AM'},
+  {id:'BBST-0002',name:'Priya Nair',dept:'Teaching',role:'Trainer',color:'#7c3aed',initials:'PN'},
+  {id:'BBST-0003',name:'Rahul Dev',dept:'Operations',role:'Coordinator',color:'#d97706',initials:'RD'},
+  {id:'BBST-0004',name:'Fathima Ali',dept:'Sales',role:'Field Executive',color:'#db2777',initials:'FA'},
+  {id:'BBST-0005',name:'Vinod Kumar',dept:'Teaching',role:'Trainer',color:'#0284c7',initials:'VK'},
+  {id:'BBST-0006',name:'Anjali Raj',dept:'Admin',role:'HR Executive',color:'#16a34a',initials:'AR'},
+  {id:'BBST-0007',name:'Suresh Babu',dept:'Operations',role:'Field Staff',color:'#dc2626',initials:'SB'},
+];
+
+// Clock
+setInterval(()=>{
+  document.getElementById('topClock').textContent = new Date().toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit',second:'2-digit'});
+},1000);
+document.getElementById('todayDate').textContent = new Date().toLocaleDateString('en-IN',{weekday:'long',day:'numeric',month:'long',year:'numeric'});
+
+// QR pattern
+function buildQR(){
+  const box = document.getElementById('qrBox');
+  // Corner markers
+  const size = 10;
+  let cells = '';
+  // Generate deterministic-ish QR-style pattern
+  const seed = [1,1,1,1,1,1,1,0,1,0,1,0,0,0,0,0,0,1,0,0,1,1,1,0,1,1,1,0,1,0,1,1,1,0,1,1,1,0,1,0,1,1,1,0,1,1,1,0,1,0,1,0,0,0,0,0,0,1,0,0,1,1,1,1,1,1,1,0,1,0,0,0,0,0,0,0,0,0,0,0,1,0,1,0,0,1,0,1,0,1,1,1,0,0,1,0,1,1,0,0];
+  for(let i=0;i<100;i++){
+    cells+=`<div style="background:${seed[i]?'#1e293b':'transparent'};border-radius:1px"></div>`;
+  }
+  box.innerHTML=`<div style="position:absolute;inset:10px;display:grid;grid-template-columns:repeat(10,1fr);gap:2px">${cells}</div>`;
+  document.getElementById('qrUrl').textContent = window.location.href.replace('admin-dashboard.html','checkin.html');
+}
+buildQR();
+
+function getTodayStatus(){
+  return JSON.parse(localStorage.getItem('bb_today_status')||'{}');
+}
+function getLogs(){
+  return JSON.parse(localStorage.getItem('bb_attendance_log')||'[]');
+}
+
+function renderAll(){
+  const today = getTodayStatus();
+  const logs = getLogs();
+
+  // Stats
+  let present=0, out=0, brk=0;
+  Object.values(today).forEach(s=>{
+    if(s.status==='present') present++;
+    else if(s.status==='checked-out') out++;
+    else if(s.status==='break') brk++;
+  });
+  const notIn = EMPLOYEES.length - present - out - brk;
+  document.getElementById('statPresent').textContent = present;
+  document.getElementById('statOut').textContent = out;
+  document.getElementById('statBreak').textContent = brk;
+  document.getElementById('statAbsent').textContent = Math.max(0,notIn);
+
+  // Status table
+  const tb = document.getElementById('statusTable');
+  const statusMap = {present:{cls:'badge-success',label:'Present'},['checked-out']:{cls:'badge-gray',label:'Checked Out'},break:{cls:'badge-warning',label:'On Break'}};
+  tb.innerHTML = EMPLOYEES.map(e=>{
+    const s = today[e.id]||{};
+    const st = s.status?statusMap[s.status]:{cls:'badge-danger',label:'Not In Yet'};
+    return `<tr>
+      <td><div style="display:flex;align-items:center;gap:8px">
+        <div class="avatar" style="background:${e.color}">${e.initials}</div>
+        <div><div style="font-weight:500">${e.name}</div><div style="font-size:10px;color:var(--text-muted)">${e.id}</div></div>
+      </div></td>
+      <td>${e.dept}</td>
+      <td>${s.in||'—'}</td>
+      <td>${s.out||'—'}</td>
+      <td>${s.break||'—'}</td>
+      <td><span class="badge ${st.cls}">${st.label}</span></td>
+    </tr>`;
+  }).join('');
+
+  // Activity log
+  const al = document.getElementById('activityLog');
+  if(!logs.length){
+    al.innerHTML='<div class="empty-state"><i class="ti ti-clock"></i>No activity yet today</div>';
+  } else {
+    const icons={in:'ti-login',out:'ti-logout',break:'ti-coffee'};
+    const bc={in:'badge-success',out:'badge-gray',break:'badge-warning'};
+    const labels={in:'Checked In',out:'Checked Out',break:'Break Started'};
+    al.innerHTML = logs.slice(0,20).map(r=>`
+      <div class="log-item">
+        <div class="avatar" style="background:${r.color};width:30px;height:30px;font-size:11px">${r.initials}</div>
+        <div style="flex:1">
+          <div class="log-name">${r.name} <span class="badge ${bc[r.action]}" style="font-size:10px">${labels[r.action]}</span></div>
+          <div class="log-meta">${r.dept} · ${r.time} ${r.note?'· '+r.note:''}</div>
+        </div>
+      </div>`).join('');
+  }
+
+  // Dept summary
+  const depts = [...new Set(EMPLOYEES.map(e=>e.dept))];
+  const ds = document.getElementById('deptSummary');
+  ds.innerHTML = depts.map(dept=>{
+    const emps = EMPLOYEES.filter(e=>e.dept===dept);
+    const present = emps.filter(e=>today[e.id]&&['present','checked-out'].includes(today[e.id].status)).length;
+    const pct = Math.round(present/emps.length*100);
+    const col = pct>=75?'var(--success)':pct>=50?'var(--warning)':'var(--danger)';
+    return `<div style="margin-bottom:12px">
+      <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:4px">
+        <span style="font-weight:500">${dept}</span>
+        <span style="color:${col};font-weight:600">${present}/${emps.length}</span>
+      </div>
+      <div style="height:5px;background:var(--surface-2);border-radius:3px;overflow:hidden">
+        <div style="height:100%;width:${pct}%;background:${col};border-radius:3px;transition:width .4s"></div>
+      </div>
+    </div>`;
+  }).join('');
+
+  // Last update
+  const lastUpdate = localStorage.getItem('bb_last_update');
+  if(lastUpdate){
+    const lu = new Date(lastUpdate);
+    document.getElementById('lastUpdate').textContent = 'Last updated: '+lu.toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit',second:'2-digit'});
+  }
+}
+
+// Toast notification
+let lastKnownUpdate = localStorage.getItem('bb_last_update');
+function showToast(record){
+  const t = document.getElementById('toast');
+  const icons={in:'<i class="ti ti-login" style="color:#10b981"></i>',out:'<i class="ti ti-logout" style="color:#94a3b8"></i>',break:'<i class="ti ti-coffee" style="color:#f59e0b"></i>'};
+  const labels={in:'Checked In',out:'Checked Out',break:'Break'};
+  document.getElementById('toastIcon').innerHTML=icons[record.action];
+  document.getElementById('toastText').innerHTML=`<strong>${record.name}</strong> ${labels[record.action]} at ${record.time}`;
+  t.classList.add('show');
+  setTimeout(()=>t.classList.remove('show'),4000);
+}
+
+// Poll for changes every 2 seconds (simulates real-time)
+setInterval(()=>{
+  const current = localStorage.getItem('bb_last_update');
+  if(current && current !== lastKnownUpdate){
+    lastKnownUpdate = current;
+    const logs = getLogs();
+    if(logs.length) showToast(logs[0]);
+    renderAll();
+  }
+},2000);
+
+function clearData(){
+  if(confirm('Clear all attendance data?')){
+    localStorage.removeItem('bb_attendance_log');
+    localStorage.removeItem('bb_today_status');
+    localStorage.removeItem('bb_last_update');
+    lastKnownUpdate = null;
+    renderAll();
+  }
+}
+
+function exportCSV(){
+  const logs = getLogs();
+  if(!logs.length){alert('No data to export');return;}
+  const csv = ['Name,Department,Action,Time,Date,Note',
+    ...logs.map(r=>`${r.name},${r.dept},${r.action},${r.time},${r.date},${r.note||''}`)
+  ].join('\n');
+  const a = document.createElement('a');
+  a.href = 'data:text/csv;charset=utf-8,'+encodeURIComponent(csv);
+  a.download = 'bb-attendance-'+new Date().toISOString().slice(0,10)+'.csv';
+  a.click();
+}
+
+function printQR(){window.print();}
+function downloadQR(){alert('In production: generates a printable QR card PDF');}
+
+renderAll();
+</script>
+</body>
+</html>
