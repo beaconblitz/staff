@@ -1,0 +1,781 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<title>Beaconblitz Staff — Attendance</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Sora:wght@500;600;700;800&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@500;600&display=swap" rel="stylesheet">
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+<script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+<style>
+  :root{
+    --ink:#161233;
+    --indigo:#1B1550;
+    --indigo-2:#2E2A78;
+    --marigold:#FF8A3D;
+    --marigold-dim:#FFE3CC;
+    --cream:#FBF8F3;
+    --paper:#FFFFFF;
+    --muted:#6B6885;
+    --line:#E7E3F5;
+    --success:#2E9E6D;
+    --danger:#D64545;
+    --radius:18px;
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;}
+  body{
+    background:var(--cream);
+    font-family:'Inter',sans-serif;
+    color:var(--ink);
+    -webkit-font-smoothing:antialiased;
+  }
+  h1,h2,h3,.display{font-family:'Sora',sans-serif;}
+  .mono{font-family:'JetBrains Mono',monospace;}
+
+  #app{
+    max-width:460px;
+    margin:0 auto;
+    min-height:100vh;
+    background:var(--cream);
+    position:relative;
+    display:flex;
+    flex-direction:column;
+  }
+
+  .topbar{
+    background:linear-gradient(135deg, #1B1550 0%, #3D2E8C 45%, #C2417A 85%, #FF8A3D 120%);
+    color:#fff;
+    padding:22px 20px 26px;
+    border-radius:0 0 26px 26px;
+  }
+  .topbar .eyebrow{
+    font-size:12px;
+    letter-spacing:.14em;
+    text-transform:uppercase;
+    color:#C9C4F0;
+    font-weight:600;
+    margin-bottom:6px;
+  }
+  .topbar h1{
+    font-size:24px;
+    margin:0;
+    font-weight:700;
+  }
+  .topbar p{margin:6px 0 0; color:#C9C4F0; font-size:14px;}
+
+  .screen{padding:20px; flex:1; display:flex; flex-direction:column; gap:16px;}
+
+  .card{
+    background:var(--paper);
+    border-radius:var(--radius);
+    padding:20px;
+    border:1px solid var(--line);
+  }
+
+  label{display:block; font-size:12px; font-weight:600; color:var(--muted); text-transform:uppercase; letter-spacing:.06em; margin-bottom:6px;}
+  input, select{
+    width:100%;
+    padding:14px 14px;
+    border-radius:12px;
+    border:1.5px solid var(--line);
+    font-size:16px;
+    font-family:'Inter',sans-serif;
+    background:#fff;
+    color:var(--ink);
+    margin-bottom:14px;
+  }
+  input:focus, select:focus{outline:none; border-color:var(--indigo-2);}
+
+  .btn{
+    display:flex; align-items:center; justify-content:center; gap:8px;
+    width:100%;
+    padding:15px 18px;
+    border-radius:14px;
+    border:none;
+    font-family:'Sora',sans-serif;
+    font-weight:600;
+    font-size:15px;
+    cursor:pointer;
+    transition:transform .1s ease, opacity .15s ease;
+  }
+  .btn:active{transform:scale(0.98);}
+  .btn-primary{background:linear-gradient(120deg,#1B1550,#3D2E8C); color:#fff;}
+  .btn-marigold{background:linear-gradient(120deg,#FF8A3D,#C2417A); color:#fff;}
+  .btn-outline{background:transparent; color:var(--indigo); border:1.5px solid var(--indigo);}
+  .btn:disabled{opacity:.45; cursor:not-allowed;}
+  .btn-ghost{background:transparent; color:var(--muted); font-weight:500; padding:8px;}
+
+  .role-toggle{display:flex; gap:8px; margin-bottom:14px;}
+  .role-toggle button{
+    flex:1; padding:12px; border-radius:12px; border:1.5px solid var(--line);
+    background:#fff; font-family:'Sora',sans-serif; font-weight:600; font-size:14px; color:var(--muted); cursor:pointer;
+  }
+  .role-toggle button.active{background:linear-gradient(120deg,#1B1550,#3D2E8C); border-color:var(--indigo); color:#fff;}
+
+  .link{color:var(--indigo-2); font-weight:600; text-decoration:underline; cursor:pointer; background:none; border:none; padding:0; font-size:14px; font-family:'Inter',sans-serif;}
+
+  .error-text{color:var(--danger); font-size:13px; margin:-8px 0 10px;}
+
+  .stat-row{display:flex; gap:12px;}
+  .stat{flex:1; background:var(--marigold-dim); border-radius:14px; padding:14px; text-align:center;}
+  .stat .num{font-family:'Sora',sans-serif; font-weight:800; font-size:22px; color:var(--indigo);}
+  .stat .lbl{font-size:11px; color:var(--muted); text-transform:uppercase; letter-spacing:.05em; margin-top:2px;}
+
+  .qr-ticket{
+    background:#fff;
+    border-radius:20px;
+    padding:22px;
+    text-align:center;
+    position:relative;
+    border:1.5px dashed var(--indigo-2);
+  }
+  .qr-ticket .biz{font-family:'Sora',sans-serif; font-weight:700; color:var(--indigo); font-size:16px; margin-bottom:12px;}
+  .qr-ticket .qrbox{display:flex; justify-content:center; margin:6px 0 14px;}
+  .qr-ticket .hint{font-size:12px; color:var(--muted);}
+
+  .staff-row{
+    display:flex; align-items:center; justify-content:space-between;
+    padding:14px 0; border-bottom:1px solid var(--line);
+  }
+  .staff-row:last-child{border-bottom:none;}
+  .staff-name{font-weight:600; font-size:15px;}
+  .staff-sub{font-size:12px; color:var(--muted);}
+  .avatar{
+    width:38px;height:38px;border-radius:10px;background:var(--indigo-2);color:#fff;
+    display:flex;align-items:center;justify-content:center;font-family:'Sora',sans-serif;font-weight:700;
+    margin-right:12px;
+  }
+  .row-flex{display:flex; align-items:center;}
+
+  .attendance-item{
+    display:flex; align-items:center; justify-content:space-between;
+    padding:12px 0; border-bottom:1px solid var(--line);
+  }
+  .attendance-item:last-child{border-bottom:none;}
+  .badge{
+    font-size:11px; font-weight:700; padding:4px 10px; border-radius:20px; text-transform:uppercase; letter-spacing:.04em;
+  }
+  .badge-in{background:#DDF3E7; color:var(--success);}
+  .badge-out{background:#FDE7E7; color:var(--danger);}
+
+  .bottom-nav{
+    display:flex;
+    border-top:1px solid var(--line);
+    background:#fff;
+    padding:10px 6px 14px;
+  }
+  .bottom-nav button{
+    flex:1; background:none; border:none; display:flex; flex-direction:column; align-items:center; gap:4px;
+    font-family:'Inter',sans-serif; font-size:11px; font-weight:600; color:var(--muted); cursor:pointer;
+  }
+  .bottom-nav button.active{color:var(--marigold);}
+  .bottom-nav .icon{font-size:20px;}
+
+  .scan-punch{
+    text-align:center;
+    padding:30px 20px;
+  }
+  .scan-punch .stamp{
+    width:84px;height:84px;border-radius:50%;
+    background:var(--success);
+    display:flex;align-items:center;justify-content:center;
+    margin:0 auto 18px; color:#fff; font-size:38px;
+  }
+  .scan-punch.out .stamp{background:var(--danger);}
+  .scan-punch .time{font-family:'JetBrains Mono',monospace; font-size:26px; font-weight:600; color:var(--indigo);}
+  .scan-punch .date{color:var(--muted); font-size:13px; margin-top:4px;}
+
+  #reader{border-radius:16px; overflow:hidden;}
+  .toast{
+    position:fixed; bottom:20px; left:50%; transform:translateX(-50%);
+    background:var(--ink); color:#fff; padding:12px 20px; border-radius:12px; font-size:13px;
+    max-width:400px; text-align:center; z-index:999;
+  }
+  .empty{
+    text-align:center; padding:30px 10px; color:var(--muted); font-size:14px;
+  }
+  .config-warning{
+    background:#FFF4E8; border:1.5px solid var(--marigold); border-radius:14px; padding:16px; font-size:13px; color:#7A4B12; line-height:1.5;
+  }
+  .config-warning code{background:#fff; padding:2px 6px; border-radius:6px;}
+</style>
+</head>
+<body>
+<div id="app"></div>
+<div id="toastHost"></div>
+
+<script>
+/* =========================================================
+   FIREBASE CONFIG — bb-staff project (Realtime Database)
+   ========================================================= */
+const firebaseConfig = {
+  apiKey: "AIzaSyDsf4bzIHvtI-D9FkBY5ImYf9E7cmZc9R8",
+  authDomain: "bb-staff.firebaseapp.com",
+  databaseURL: "https://bb-staff-default-rtdb.asia-southeast1.firebasedatabase.app/",
+  projectId: "bb-staff",
+  storageBucket: "bb-staff.firebasestorage.app",
+  messagingSenderId: "799545974014",
+  appId: "1:799545974014:web:dbb2dbfd44e53cedbbd9af"
+};
+
+let db = null;
+let firebaseReady = false;
+try {
+  if (firebaseConfig.apiKey !== "YOUR_API_KEY") {
+    firebase.initializeApp(firebaseConfig);
+    db = firebase.database();
+    firebaseReady = true;
+  }
+} catch (e) { console.error(e); }
+
+/* ---------------------------------------------------------
+   APP STATE (in-memory only — no localStorage per platform rules)
+   --------------------------------------------------------- */
+const state = {
+  screen: firebaseReady ? 'landing' : 'setup',
+  role: 'admin',      // 'admin' | 'staff'
+  session: null,      // { businessId, role, staffId?, name, businessName }
+  staffList: [],
+  attendance: [],
+  staffListenerRef: null,
+  attendanceListenerRef: null,
+  loading: false,
+  error: '',
+  lastPunchType: 'in'
+};
+
+function toast(msg){
+  const host = document.getElementById('toastHost');
+  const el = document.createElement('div');
+  el.className = 'toast';
+  el.textContent = msg;
+  host.appendChild(el);
+  setTimeout(()=> el.remove(), 2600);
+}
+
+function go(screen){ state.screen = screen; state.error=''; render(); }
+
+/* ---------------------------------------------------------
+   REALTIME DATABASE HELPERS
+   /mobileIndex/{mobile} = { role, businessId, staffId? }
+   /businesses/{businessId} = { name, sector, mobile, pin, adminName }
+   /businesses/{businessId}/staff/{staffId} = { name, mobile, pin, gender, designation }
+   /businesses/{businessId}/attendance/{pushId} = { staffId, staffName, type, ts, lat, lng }
+   --------------------------------------------------------- */
+
+async function registerBusiness(data){
+  const mobileSnap = await db.ref('mobileIndex/' + data.mobile).once('value');
+  if (mobileSnap.exists()) throw new Error('This mobile number is already registered. Try logging in instead.');
+
+  const bizRef = db.ref('businesses').push();
+  await bizRef.set({
+    name: data.businessName,
+    sector: data.sector || '',
+    mobile: data.mobile,
+    pin: data.pin,
+    adminName: data.adminName,
+    createdAt: firebase.database.ServerValue.TIMESTAMP
+  });
+  await db.ref('mobileIndex/' + data.mobile).set({ role: 'admin', businessId: bizRef.key });
+  return bizRef.key;
+}
+
+async function loginUser(mobile, pin){
+  const idxSnap = await db.ref('mobileIndex/' + mobile).once('value');
+  if (!idxSnap.exists()) throw new Error("We couldn't find an account with that mobile number.");
+  const idx = idxSnap.val();
+
+  if (idx.role === 'admin'){
+    const bizSnap = await db.ref('businesses/' + idx.businessId).once('value');
+    const biz = bizSnap.val();
+    if (biz.pin !== pin) throw new Error('Incorrect PIN.');
+    return { role:'admin', businessId: idx.businessId, name: biz.adminName, businessName: biz.name };
+  } else {
+    const staffSnap = await db.ref('businesses/' + idx.businessId + '/staff/' + idx.staffId).once('value');
+    const staff = staffSnap.val();
+    if (staff.pin !== pin) throw new Error('Incorrect PIN.');
+    const bizSnap = await db.ref('businesses/' + idx.businessId).once('value');
+    return { role:'staff', businessId: idx.businessId, staffId: idx.staffId, name: staff.name, businessName: bizSnap.val().name };
+  }
+}
+
+async function addStaff(businessId, data){
+  const mobileSnap = await db.ref('mobileIndex/' + data.mobile).once('value');
+  if (mobileSnap.exists()) throw new Error('This mobile number is already registered elsewhere.');
+
+  const staffRef = db.ref('businesses/' + businessId + '/staff').push();
+  await staffRef.set({
+    name: data.name,
+    mobile: data.mobile,
+    pin: data.pin,
+    gender: data.gender || '',
+    designation: data.designation || '',
+    createdAt: firebase.database.ServerValue.TIMESTAMP
+  });
+  await db.ref('mobileIndex/' + data.mobile).set({ role:'staff', businessId, staffId: staffRef.key });
+  return staffRef.key;
+}
+
+function listenStaff(businessId){
+  if (state.staffListenerRef) state.staffListenerRef.off();
+  const ref = db.ref('businesses/' + businessId + '/staff');
+  state.staffListenerRef = ref;
+  ref.on('value', snap=>{
+    const val = snap.val() || {};
+    state.staffList = Object.keys(val).map(id=>({ id, ...val[id] }));
+    if (state.screen === 'adminStaff' || state.screen === 'adminHome') render();
+  });
+}
+
+function listenAttendance(businessId, staffId){
+  if (state.attendanceListenerRef) state.attendanceListenerRef.off();
+  const ref = db.ref('businesses/' + businessId + '/attendance').limitToLast(200);
+  state.attendanceListenerRef = ref;
+  ref.on('value', snap=>{
+    const val = snap.val() || {};
+    let list = Object.keys(val).map(id=>({ id, ...val[id] }));
+    if (staffId) list = list.filter(a=>a.staffId === staffId);
+    list.sort((a,b)=> (b.ts||0) - (a.ts||0));
+    state.attendance = list;
+    if (state.screen === 'adminAttendance' || state.screen === 'staffHome') render();
+  });
+}
+
+async function markAttendance(businessId, staffId, staffName, lat, lng){
+  const attSnap = await db.ref('businesses/' + businessId + '/attendance').once('value');
+  const val = attSnap.val() || {};
+  const mine = Object.values(val).filter(a=>a.staffId===staffId).sort((a,b)=>(b.ts||0)-(a.ts||0));
+  let type = 'in';
+  if (mine.length){
+    const last = mine[0];
+    const isToday = new Date().toDateString() === new Date(last.ts).toDateString();
+    if (isToday && last.type === 'in') type = 'out';
+    else if (isToday && last.type === 'out') type = 'in';
+  }
+  await db.ref('businesses/' + businessId + '/attendance').push({
+    staffId, staffName, type, lat, lng,
+    ts: firebase.database.ServerValue.TIMESTAMP
+  });
+  return type;
+}
+
+/* ---------------------------------------------------------
+   RENDER
+   --------------------------------------------------------- */
+function render(){
+  const app = document.getElementById('app');
+  app.innerHTML = '';
+  const map = {
+    setup: renderSetup,
+    landing: renderLanding,
+    login: renderLogin,
+    registerBiz: renderRegisterBiz,
+    adminHome: renderAdminHome,
+    adminStaff: renderAdminStaff,
+    addStaff: renderAddStaff,
+    adminAttendance: renderAdminAttendance,
+    staffHome: renderStaffHome,
+    scanning: renderScanning,
+    punchResult: renderPunchResult
+  };
+  (map[state.screen] || renderLanding)(app);
+}
+
+function topbar(eyebrow, title, sub){
+  return `<div class="topbar">
+    <div class="eyebrow">${eyebrow}</div>
+    <h1>${title}</h1>
+    ${sub ? `<p>${sub}</p>` : ''}
+  </div>`;
+}
+
+function renderSetup(app){
+  app.innerHTML = `
+    ${topbar('Beaconblitz Staff','Connect Firebase','One-time setup before the app can run')}
+    <div class="screen">
+      <div class="config-warning">
+        This app needs a Firebase project with <strong>Realtime Database</strong> enabled.
+        Open this file and replace the <code>firebaseConfig</code> object near the top
+        of the &lt;script&gt; with your project's config. Then reload.
+      </div>
+    </div>`;
+}
+
+function renderLanding(app){
+  app.innerHTML = `
+    ${topbar('Welcome to','Beaconblitz Staff','QR attendance for your whole team')}
+    <div class="screen">
+      <div class="card">
+        <div class="role-toggle">
+          <button class="${state.role==='admin'?'active':''}" onclick="setRole('admin')">I'm an Admin</button>
+          <button class="${state.role==='staff'?'active':''}" onclick="setRole('staff')">I'm Staff</button>
+        </div>
+        <p class="staff-sub" style="margin-bottom:18px;">
+          ${state.role==='admin' ? 'Register your business and start adding staff.' : 'Log in with the mobile number and PIN your admin gave you.'}
+        </p>
+        <button class="btn btn-primary" onclick="go('login')">Log in</button>
+        ${state.role==='admin' ? `<div style="height:10px"></div><button class="btn btn-outline" onclick="go('registerBiz')">Register a new business</button>` : ''}
+      </div>
+    </div>`;
+}
+function setRole(r){ state.role = r; render(); }
+
+function renderLogin(app){
+  app.innerHTML = `
+    ${topbar('Log in', state.role==='admin' ? 'Admin Login' : 'Staff Login', 'Enter your mobile number and PIN')}
+    <div class="screen">
+      <div class="card">
+        <label>Mobile number</label>
+        <input id="loginMobile" type="tel" maxlength="10" placeholder="9876543210">
+        <label>PIN</label>
+        <input id="loginPin" type="password" maxlength="6" placeholder="4-digit PIN">
+        ${state.error ? `<div class="error-text">${state.error}</div>` : ''}
+        <button class="btn btn-primary" id="loginBtn" onclick="doLogin()">Continue</button>
+        <div style="height:14px"></div>
+        <button class="btn btn-ghost" onclick="go('landing')">← Back</button>
+      </div>
+    </div>`;
+}
+
+async function doLogin(){
+  const mobile = document.getElementById('loginMobile').value.trim();
+  const pin = document.getElementById('loginPin').value.trim();
+  if (!mobile || !pin){ state.error='Enter mobile number and PIN.'; render(); return; }
+  const btn = document.getElementById('loginBtn');
+  btn.disabled = true; btn.textContent = 'Checking...';
+  try{
+    const session = await loginUser(mobile, pin);
+    state.session = session;
+    if (session.role === 'admin'){
+      listenStaff(session.businessId);
+      listenAttendance(session.businessId, null);
+      go('adminHome');
+    } else {
+      listenAttendance(session.businessId, session.staffId);
+      go('staffHome');
+    }
+  }catch(e){
+    state.error = e.message;
+    render();
+  }
+}
+
+function renderRegisterBiz(app){
+  app.innerHTML = `
+    ${topbar('Get started','Register Business','Set up your admin account')}
+    <div class="screen">
+      <div class="card">
+        <label>Your name</label>
+        <input id="regName" placeholder="Admin name">
+        <label>Business / firm name</label>
+        <input id="regBiz" placeholder="e.g. Babla Traders">
+        <label>Sector (optional)</label>
+        <input id="regSector" placeholder="e.g. Retail, Marketing Agency">
+        <label>Mobile number</label>
+        <input id="regMobile" type="tel" maxlength="10" placeholder="9876543210">
+        <label>Create a PIN</label>
+        <input id="regPin" type="password" maxlength="6" placeholder="4-digit PIN">
+        ${state.error ? `<div class="error-text">${state.error}</div>` : ''}
+        <button class="btn btn-marigold" id="regBtn" onclick="doRegister()">Create business</button>
+        <div style="height:14px"></div>
+        <button class="btn btn-ghost" onclick="go('landing')">← Back</button>
+      </div>
+    </div>`;
+}
+
+async function doRegister(){
+  const data = {
+    adminName: document.getElementById('regName').value.trim(),
+    businessName: document.getElementById('regBiz').value.trim(),
+    sector: document.getElementById('regSector').value.trim(),
+    mobile: document.getElementById('regMobile').value.trim(),
+    pin: document.getElementById('regPin').value.trim()
+  };
+  if (!data.adminName || !data.businessName || !data.mobile || !data.pin){
+    state.error = 'Please fill in all required fields.'; render(); return;
+  }
+  const btn = document.getElementById('regBtn');
+  btn.disabled = true; btn.textContent = 'Creating...';
+  try{
+    const businessId = await registerBusiness(data);
+    state.session = { role:'admin', businessId, name:data.adminName, businessName:data.businessName };
+    listenStaff(businessId);
+    listenAttendance(businessId, null);
+    toast('Business created 🎉');
+    go('adminHome');
+  }catch(e){
+    state.error = e.message;
+    render();
+  }
+}
+
+function renderAdminHome(app){
+  const businessId = state.session.businessId;
+  const todayStr = new Date().toDateString();
+  const todayIn = state.attendance.filter(a=> a.ts && new Date(a.ts).toDateString()===todayStr && a.type==='in');
+  app.innerHTML = `
+    ${topbar('Admin', state.session.businessName, `Welcome, ${state.session.name}`)}
+    <div class="screen">
+      <div class="stat-row">
+        <div class="stat"><div class="num">${state.staffList.length}</div><div class="lbl">Staff</div></div>
+        <div class="stat"><div class="num">${todayIn.length}</div><div class="lbl">Checked in today</div></div>
+      </div>
+
+      <div class="qr-ticket">
+        <div class="biz">${state.session.businessName}'s Attendance QR</div>
+        <div class="qrbox" id="qrCanvas"></div>
+        <div class="hint">Staff scan this from their Beaconblitz Staff app to check in / out</div>
+      </div>
+
+      <div class="card" style="display:flex; gap:10px;">
+        <button class="btn btn-outline" onclick="go('addStaff')">+ Add Staff</button>
+        <button class="btn btn-outline" onclick="go('adminAttendance')">View Attendance</button>
+      </div>
+    </div>
+    ${bottomNav('adminHome')}
+  `;
+  setTimeout(()=>{
+    const el = document.getElementById('qrCanvas');
+    if (el && window.QRCode){
+      el.innerHTML='';
+      new QRCode(el, { text: JSON.stringify({businessId}), width:160, height:160, colorDark:'#1B1550', colorLight:'#ffffff' });
+    }
+  },0);
+}
+
+function bottomNav(active){
+  const isAdmin = state.session.role === 'admin';
+  const items = isAdmin
+    ? [['adminHome','🏠','Home'],['adminStaff','👥','Staff'],['adminAttendance','🗓️','Attendance']]
+    : [['staffHome','🏠','Home']];
+  return `<div class="bottom-nav">
+    ${items.map(([key,icon,label])=>`
+      <button class="${active===key?'active':''}" onclick="go('${key}')">
+        <span class="icon">${icon}</span>${label}
+      </button>`).join('')}
+    <button onclick="doLogout()"><span class="icon">↩️</span>Logout</button>
+  </div>`;
+}
+
+function doLogout(){
+  if (state.staffListenerRef) state.staffListenerRef.off();
+  if (state.attendanceListenerRef) state.attendanceListenerRef.off();
+  state.session = null;
+  go('landing');
+}
+
+function renderAdminStaff(app){
+  app.innerHTML = `
+    ${topbar('Team', 'Staff', `${state.staffList.length} member(s)`)}
+    <div class="screen">
+      <button class="btn btn-marigold" onclick="go('addStaff')">+ Add New Staff</button>
+      <div class="card">
+        ${state.staffList.length===0 ? `<div class="empty">No staff added yet.</div>` :
+          state.staffList.map(s=>`
+            <div class="staff-row">
+              <div class="row-flex">
+                <div class="avatar">${(s.name||'?')[0].toUpperCase()}</div>
+                <div>
+                  <div class="staff-name">${s.name}</div>
+                  <div class="staff-sub">${s.designation || 'Staff'} · ${s.mobile}</div>
+                </div>
+              </div>
+            </div>
+          `).join('')}
+      </div>
+    </div>
+    ${bottomNav('adminStaff')}
+  `;
+}
+
+function renderAddStaff(app){
+  app.innerHTML = `
+    ${topbar('Team','Add Staff','New staff get their own login PIN')}
+    <div class="screen">
+      <div class="card">
+        <label>Staff name</label>
+        <input id="stName" placeholder="Full name">
+        <label>Mobile number</label>
+        <input id="stMobile" type="tel" maxlength="10" placeholder="9876543210">
+        <label>Set a PIN for staff login</label>
+        <input id="stPin" type="password" maxlength="6" placeholder="4-digit PIN">
+        <label>Designation (optional)</label>
+        <input id="stDesig" placeholder="e.g. Sales Executive">
+        ${state.error ? `<div class="error-text">${state.error}</div>` : ''}
+        <button class="btn btn-primary" id="addStaffBtn" onclick="doAddStaff()">Add Staff</button>
+        <div style="height:10px"></div>
+        <button class="btn btn-ghost" onclick="go('adminStaff')">← Cancel</button>
+      </div>
+    </div>
+  `;
+}
+
+async function doAddStaff(){
+  const data = {
+    name: document.getElementById('stName').value.trim(),
+    mobile: document.getElementById('stMobile').value.trim(),
+    pin: document.getElementById('stPin').value.trim(),
+    designation: document.getElementById('stDesig').value.trim()
+  };
+  if (!data.name || !data.mobile || !data.pin){
+    state.error='Name, mobile and PIN are required.'; render(); return;
+  }
+  const btn = document.getElementById('addStaffBtn');
+  btn.disabled = true; btn.textContent = 'Adding...';
+  try{
+    await addStaff(state.session.businessId, data);
+    toast(`${data.name} added — share mobile + PIN with them to log in`);
+    go('adminStaff');
+  }catch(e){
+    state.error = e.message; render();
+  }
+}
+
+function fmtTs(ts){
+  if (!ts) return '—';
+  const d = new Date(ts);
+  return d.toLocaleString('en-IN', { day:'2-digit', month:'short', hour:'2-digit', minute:'2-digit' });
+}
+
+function renderAdminAttendance(app){
+  app.innerHTML = `
+    ${topbar('Records','Attendance Log', 'Latest 200 punches across staff')}
+    <div class="screen">
+      <div class="card">
+        ${state.attendance.length===0 ? `<div class="empty">No attendance recorded yet.</div>` :
+          state.attendance.map(a=>`
+            <div class="attendance-item">
+              <div>
+                <div class="staff-name">${a.staffName}</div>
+                <div class="staff-sub mono">${fmtTs(a.ts)}</div>
+              </div>
+              <span class="badge ${a.type==='in'?'badge-in':'badge-out'}">${a.type==='in'?'Check In':'Check Out'}</span>
+            </div>
+          `).join('')}
+      </div>
+    </div>
+    ${bottomNav('adminAttendance')}
+  `;
+}
+
+function renderStaffHome(app){
+  const last = state.attendance[0];
+  app.innerHTML = `
+    ${topbar('Staff', state.session.name, state.session.businessName)}
+    <div class="screen">
+      <div class="card" style="text-align:center;">
+        <div class="staff-sub" style="margin-bottom:14px;">
+          ${last ? `Last punch: <strong>${last.type==='in'?'Checked In':'Checked Out'}</strong> · ${fmtTs(last.ts)}` : 'No attendance yet today'}
+        </div>
+        <button class="btn btn-marigold" onclick="go('scanning')">📷 Scan QR to Mark Attendance</button>
+      </div>
+      <div class="card">
+        <h3 style="margin:0 0 10px; font-size:15px;">My Recent Attendance</h3>
+        ${state.attendance.length===0 ? `<div class="empty">Nothing here yet.</div>` :
+          state.attendance.slice(0,10).map(a=>`
+            <div class="attendance-item">
+              <div class="staff-sub mono">${fmtTs(a.ts)}</div>
+              <span class="badge ${a.type==='in'?'badge-in':'badge-out'}">${a.type==='in'?'In':'Out'}</span>
+            </div>
+          `).join('')}
+      </div>
+    </div>
+    ${bottomNav('staffHome')}
+  `;
+}
+
+let html5QrCode = null;
+function renderScanning(app){
+  app.innerHTML = `
+    ${topbar('Attendance','Scan Business QR','Point your camera at the QR shown on the admin dashboard')}
+    <div class="screen">
+      <div class="card">
+        <div id="reader"></div>
+        <div class="staff-sub" id="scanStatus" style="margin-top:12px; text-align:center;">Requesting camera access...</div>
+      </div>
+      <button class="btn btn-ghost" onclick="stopScanAndGo('staffHome')">Cancel</button>
+    </div>
+  `;
+  setTimeout(startScanner, 50);
+}
+
+function startScanner(){
+  const statusEl = document.getElementById('scanStatus');
+  html5QrCode = new Html5Qrcode("reader");
+  Html5Qrcode.getCameras().then(cameras=>{
+    if (!cameras || !cameras.length){
+      statusEl.textContent = 'No camera found on this device.';
+      return;
+    }
+    const camId = cameras[cameras.length-1].id;
+    html5QrCode.start(
+      camId,
+      { fps:10, qrbox:220 },
+      onScanSuccess,
+      ()=>{}
+    ).then(()=>{ statusEl.textContent = 'Point camera at the business QR code'; })
+     .catch(err=>{ statusEl.textContent = 'Camera error: ' + err; });
+  }).catch(err=>{
+    statusEl.textContent = 'Camera permission denied or unavailable.';
+  });
+}
+
+function stopScanAndGo(screen){
+  if (html5QrCode){
+    html5QrCode.stop().then(()=>{ html5QrCode.clear(); go(screen); }).catch(()=> go(screen));
+  } else go(screen);
+}
+
+let scanLock = false;
+async function onScanSuccess(decodedText){
+  if (scanLock) return;
+  scanLock = true;
+  const statusEl = document.getElementById('scanStatus');
+  try{
+    const payload = JSON.parse(decodedText);
+    if (payload.businessId !== state.session.businessId){
+      statusEl.textContent = "This QR doesn't belong to your business.";
+      scanLock = false;
+      return;
+    }
+    statusEl.textContent = 'Getting your location...';
+    navigator.geolocation.getCurrentPosition(async (pos)=>{
+      const { latitude, longitude } = pos.coords;
+      const type = await markAttendance(state.session.businessId, state.session.staffId, state.session.name, latitude, longitude);
+      state.lastPunchType = type;
+      stopScanAndGo('punchResult');
+    }, (err)=>{
+      statusEl.textContent = 'Location permission is required to mark attendance.';
+      scanLock = false;
+    }, { enableHighAccuracy:true, timeout:10000 });
+  }catch(e){
+    statusEl.textContent = 'Invalid QR code, try again.';
+    scanLock = false;
+  }
+}
+
+function renderPunchResult(app){
+  const type = state.lastPunchType || 'in';
+  const now = new Date();
+  app.innerHTML = `
+    <div class="screen">
+      <div class="card scan-punch ${type==='out'?'out':''}">
+        <div class="stamp">${type==='in' ? '✓' : '↩'}</div>
+        <h2 style="margin:0;">${type==='in' ? 'Checked In' : 'Checked Out'}</h2>
+        <div class="time mono">${now.toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit'})}</div>
+        <div class="date">${now.toLocaleDateString('en-IN',{weekday:'long', day:'numeric', month:'long'})}</div>
+      </div>
+      <button class="btn btn-primary" onclick="go('staffHome')">Done</button>
+    </div>
+  `;
+  scanLock = false;
+}
+
+render();
+</script>
+</body>
+</html>
