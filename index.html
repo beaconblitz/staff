@@ -116,6 +116,13 @@
   }
   .role-toggle button.active{background:linear-gradient(120deg,#1B1550,#3D2E8C); border-color:var(--indigo); color:#fff;}
 
+  .chip-row{display:flex; gap:8px; flex-wrap:wrap; margin-bottom:14px;}
+  .chip{
+    padding:8px 14px; border-radius:20px; border:1.5px solid var(--line); background:#fff;
+    font-size:12px; font-weight:600; color:var(--muted); cursor:pointer; font-family:'Inter',sans-serif;
+  }
+  .chip.active{background:var(--indigo); border-color:var(--indigo); color:#fff;}
+
   .link{color:var(--indigo-2); font-weight:600; text-decoration:underline; cursor:pointer; background:none; border:none; padding:0; font-size:14px; font-family:'Inter',sans-serif;}
 
   .error-text{color:var(--danger); font-size:13px; margin:-8px 0 10px;}
@@ -151,16 +158,23 @@
   }
   .row-flex{display:flex; align-items:center;}
 
+  .date-group-label{
+    font-family:'Sora',sans-serif; font-weight:700; font-size:13px; color:var(--indigo);
+    margin:2px 0 2px; padding-top:6px;
+  }
   .attendance-item{
     display:flex; align-items:center; justify-content:space-between;
     padding:12px 0; border-bottom:1px solid var(--line);
   }
   .attendance-item:last-child{border-bottom:none;}
+  .att-left{display:flex; flex-direction:column; gap:2px;}
+  .att-right{display:flex; flex-direction:column; align-items:flex-end; gap:4px;}
   .badge{
     font-size:11px; font-weight:700; padding:4px 10px; border-radius:20px; text-transform:uppercase; letter-spacing:.04em;
   }
   .badge-in{background:#DDF3E7; color:var(--success);}
   .badge-out{background:#FDE7E7; color:var(--danger);}
+  .map-link{font-size:11px; color:var(--indigo-2); text-decoration:none; font-weight:600;}
 
   .bottom-nav{
     display:flex;
@@ -202,6 +216,7 @@
     background:#FFF4E8; border:1.5px solid var(--marigold); border-radius:14px; padding:16px; font-size:13px; color:#7A4B12; line-height:1.5;
   }
   .config-warning code{background:#fff; padding:2px 6px; border-radius:6px;}
+  .spinner-box{text-align:center; padding:40px 20px; color:var(--muted);}
 </style>
 </head>
 <body>
@@ -232,20 +247,23 @@ try {
   }
 } catch (e) { console.error(e); }
 
+const SESSION_KEY = 'bbStaffSession';
+
 /* ---------------------------------------------------------
-   APP STATE (in-memory only — no localStorage per platform rules)
+   APP STATE
    --------------------------------------------------------- */
 const state = {
-  screen: firebaseReady ? 'landing' : 'setup',
-  role: 'admin',      // 'admin' | 'staff'
+  screen: 'loading',
+  role: 'admin',      // 'admin' | 'staff'  (for landing/login toggle only)
   session: null,      // { businessId, role, staffId?, name, businessName }
   staffList: [],
   attendance: [],
   staffListenerRef: null,
   attendanceListenerRef: null,
-  loading: false,
   error: '',
-  lastPunchType: 'in'
+  lastPunchType: 'in',
+  pendingAttendBiz: null,
+  report: { staffId: 'all', range: 'today' }
 };
 
 function toast(msg){
@@ -258,6 +276,16 @@ function toast(msg){
 }
 
 function go(screen){ state.screen = screen; state.error=''; render(); }
+
+function saveSession(session){
+  try{ localStorage.setItem(SESSION_KEY, JSON.stringify(session)); }catch(e){}
+}
+function loadSession(){
+  try{ const raw = localStorage.getItem(SESSION_KEY); return raw ? JSON.parse(raw) : null; }catch(e){ return null; }
+}
+function clearSession(){
+  try{ localStorage.removeItem(SESSION_KEY); }catch(e){}
+}
 
 /* ---------------------------------------------------------
    REALTIME DATABASE HELPERS
@@ -327,13 +355,13 @@ function listenStaff(businessId){
   ref.on('value', snap=>{
     const val = snap.val() || {};
     state.staffList = Object.keys(val).map(id=>({ id, ...val[id] }));
-    if (state.screen === 'adminStaff' || state.screen === 'adminHome') render();
+    if (['adminStaff','adminHome','adminAttendance'].includes(state.screen)) render();
   });
 }
 
 function listenAttendance(businessId, staffId){
   if (state.attendanceListenerRef) state.attendanceListenerRef.off();
-  const ref = db.ref('businesses/' + businessId + '/attendance').limitToLast(200);
+  const ref = db.ref('businesses/' + businessId + '/attendance').limitToLast(1000);
   state.attendanceListenerRef = ref;
   ref.on('value', snap=>{
     const val = snap.val() || {};
@@ -341,7 +369,7 @@ function listenAttendance(businessId, staffId){
     if (staffId) list = list.filter(a=>a.staffId === staffId);
     list.sort((a,b)=> (b.ts||0) - (a.ts||0));
     state.attendance = list;
-    if (state.screen === 'adminAttendance' || state.screen === 'staffHome') render();
+    if (['adminAttendance','staffHome'].includes(state.screen)) render();
   });
 }
 
@@ -364,12 +392,78 @@ async function markAttendance(businessId, staffId, staffName, lat, lng){
 }
 
 /* ---------------------------------------------------------
+   BOOTSTRAP — restore session + handle QR deep-link (?attend=businessId)
+   --------------------------------------------------------- */
+async function bootstrap(){
+  if (!firebaseReady){ go('setup'); return; }
+
+  const urlParams = new URLSearchParams(window.location.search);
+  const attendBiz = urlParams.get('attend');
+  const existing = loadSession();
+
+  if (existing){
+    state.session = existing;
+    if (existing.role === 'admin'){
+      listenStaff(existing.businessId);
+      listenAttendance(existing.businessId, null);
+    } else {
+      listenAttendance(existing.businessId, existing.staffId);
+    }
+  }
+
+  if (attendBiz){
+    // Clean the URL so a refresh doesn't re-trigger the punch
+    const cleanUrl = window.location.origin + window.location.pathname;
+    window.history.replaceState({}, document.title, cleanUrl);
+
+    if (existing && existing.role === 'staff' && existing.businessId === attendBiz){
+      go('punching');
+      captureAndMark(existing.businessId, existing.staffId, existing.name);
+      return;
+    } else if (existing && existing.role === 'admin'){
+      toast("Log in as staff on this device to mark attendance.");
+    } else if (existing && existing.businessId !== attendBiz){
+      toast("This QR is for a different business than your account.");
+    } else if (!existing){
+      state.pendingAttendBiz = attendBiz;
+      state.role = 'staff';
+      go('login');
+      return;
+    }
+  }
+
+  if (existing){
+    go(existing.role === 'admin' ? 'adminHome' : 'staffHome');
+  } else {
+    go('landing');
+  }
+}
+
+async function captureAndMark(businessId, staffId, staffName){
+  try{
+    navigator.geolocation.getCurrentPosition(async (pos)=>{
+      const { latitude, longitude } = pos.coords;
+      const type = await markAttendance(businessId, staffId, staffName, latitude, longitude);
+      state.lastPunchType = type;
+      go('punchResult');
+    }, (err)=>{
+      state.error = 'Location permission is required to mark attendance.';
+      go('staffHome');
+    }, { enableHighAccuracy:true, timeout:12000 });
+  }catch(e){
+    state.error = 'Could not mark attendance. Try again.';
+    go('staffHome');
+  }
+}
+
+/* ---------------------------------------------------------
    RENDER
    --------------------------------------------------------- */
 function render(){
   const app = document.getElementById('app');
   app.innerHTML = '';
   const map = {
+    loading: renderLoading,
     setup: renderSetup,
     landing: renderLanding,
     login: renderLogin,
@@ -380,6 +474,7 @@ function render(){
     adminAttendance: renderAdminAttendance,
     staffHome: renderStaffHome,
     scanning: renderScanning,
+    punching: renderPunching,
     punchResult: renderPunchResult
   };
   (map[state.screen] || renderLanding)(app);
@@ -391,6 +486,10 @@ function topbar(eyebrow, title, sub){
     <h1>${title}</h1>
     ${sub ? `<p>${sub}</p>` : ''}
   </div>`;
+}
+
+function renderLoading(app){
+  app.innerHTML = `<div class="spinner-box">Loading Beaconblitz Staff…</div>`;
 }
 
 function renderSetup(app){
@@ -426,7 +525,7 @@ function setRole(r){ state.role = r; render(); }
 
 function renderLogin(app){
   app.innerHTML = `
-    ${topbar('Log in', state.role==='admin' ? 'Admin Login' : 'Staff Login', 'Enter your mobile number and PIN')}
+    ${topbar('Log in', state.role==='admin' ? 'Admin Login' : 'Staff Login', state.pendingAttendBiz ? 'Log in to confirm your attendance scan' : 'Enter your mobile number and PIN')}
     <div class="screen">
       <div class="card">
         <label>Mobile number</label>
@@ -436,7 +535,7 @@ function renderLogin(app){
         ${state.error ? `<div class="error-text">${state.error}</div>` : ''}
         <button class="btn btn-primary" id="loginBtn" onclick="doLogin()">Continue</button>
         <div style="height:14px"></div>
-        <button class="btn btn-ghost" onclick="go('landing')">← Back</button>
+        <button class="btn btn-ghost" onclick="state.pendingAttendBiz=null; go('landing')">← Back</button>
       </div>
     </div>`;
 }
@@ -450,13 +549,22 @@ async function doLogin(){
   try{
     const session = await loginUser(mobile, pin);
     state.session = session;
+    saveSession(session);
     if (session.role === 'admin'){
       listenStaff(session.businessId);
       listenAttendance(session.businessId, null);
       go('adminHome');
     } else {
       listenAttendance(session.businessId, session.staffId);
-      go('staffHome');
+      if (state.pendingAttendBiz && state.pendingAttendBiz === session.businessId){
+        const biz = state.pendingAttendBiz;
+        state.pendingAttendBiz = null;
+        go('punching');
+        captureAndMark(biz, session.staffId, session.name);
+      } else {
+        state.pendingAttendBiz = null;
+        go('staffHome');
+      }
     }
   }catch(e){
     state.error = e.message;
@@ -502,7 +610,9 @@ async function doRegister(){
   btn.disabled = true; btn.textContent = 'Creating...';
   try{
     const businessId = await registerBusiness(data);
-    state.session = { role:'admin', businessId, name:data.adminName, businessName:data.businessName };
+    const session = { role:'admin', businessId, name:data.adminName, businessName:data.businessName };
+    state.session = session;
+    saveSession(session);
     listenStaff(businessId);
     listenAttendance(businessId, null);
     toast('Business created 🎉');
@@ -515,6 +625,7 @@ async function doRegister(){
 
 function renderAdminHome(app){
   const businessId = state.session.businessId;
+  const qrUrl = window.location.origin + window.location.pathname + '?attend=' + businessId;
   const todayStr = new Date().toDateString();
   const todayIn = state.attendance.filter(a=> a.ts && new Date(a.ts).toDateString()===todayStr && a.type==='in');
   app.innerHTML = `
@@ -528,7 +639,7 @@ function renderAdminHome(app){
       <div class="qr-ticket">
         <div class="biz">${state.session.businessName}'s Attendance QR</div>
         <div class="qrbox" id="qrCanvas"></div>
-        <div class="hint">Staff scan this from their Beaconblitz Staff app to check in / out</div>
+        <div class="hint">Staff can scan this with any camera or QR app — it opens straight to attendance</div>
       </div>
 
       <div class="card" style="display:flex; gap:10px;">
@@ -542,7 +653,7 @@ function renderAdminHome(app){
     const el = document.getElementById('qrCanvas');
     if (el && window.QRCode){
       el.innerHTML='';
-      new QRCode(el, { text: JSON.stringify({businessId}), width:160, height:160, colorDark:'#1B1550', colorLight:'#ffffff' });
+      new QRCode(el, { text: qrUrl, width:170, height:170, colorDark:'#1B1550', colorLight:'#ffffff' });
     }
   },0);
 }
@@ -565,6 +676,7 @@ function doLogout(){
   if (state.staffListenerRef) state.staffListenerRef.off();
   if (state.attendanceListenerRef) state.attendanceListenerRef.off();
   state.session = null;
+  clearSession();
   go('landing');
 }
 
@@ -635,50 +747,113 @@ async function doAddStaff(){
   }
 }
 
-function fmtTs(ts){
+function fmtTime(ts){
   if (!ts) return '—';
+  return new Date(ts).toLocaleTimeString('en-IN', { hour:'2-digit', minute:'2-digit' });
+}
+function fmtDateLabel(ts){
   const d = new Date(ts);
-  return d.toLocaleString('en-IN', { day:'2-digit', month:'short', hour:'2-digit', minute:'2-digit' });
+  const today = new Date();
+  const yesterday = new Date(); yesterday.setDate(today.getDate()-1);
+  if (d.toDateString()===today.toDateString()) return 'Today';
+  if (d.toDateString()===yesterday.toDateString()) return 'Yesterday';
+  return d.toLocaleDateString('en-IN', { day:'2-digit', month:'short', year:'numeric', weekday:'short' });
+}
+
+function rangeStart(range){
+  const now = new Date();
+  if (range==='today'){ const d=new Date(now); d.setHours(0,0,0,0); return d.getTime(); }
+  if (range==='week'){ const d=new Date(now); d.setDate(d.getDate()-6); d.setHours(0,0,0,0); return d.getTime(); }
+  if (range==='month'){ const d=new Date(now); d.setDate(d.getDate()-29); d.setHours(0,0,0,0); return d.getTime(); }
+  return 0; // 'all'
 }
 
 function renderAdminAttendance(app){
+  const start = rangeStart(state.report.range);
+  let filtered = state.attendance.filter(a => (a.ts||0) >= start);
+  if (state.report.staffId !== 'all') filtered = filtered.filter(a => a.staffId === state.report.staffId);
+
+  // group by date
+  const groups = {};
+  filtered.forEach(a=>{
+    const key = new Date(a.ts).toDateString();
+    if (!groups[key]) groups[key] = [];
+    groups[key].push(a);
+  });
+  const dateKeys = Object.keys(groups).sort((a,b)=> new Date(b)-new Date(a));
+
+  const uniqueStaffPresent = new Set(filtered.filter(a=>a.type==='in').map(a=>a.staffId)).size;
+  const totalIn = filtered.filter(a=>a.type==='in').length;
+  const totalOut = filtered.filter(a=>a.type==='out').length;
+
   app.innerHTML = `
-    ${topbar('Records','Attendance Log', 'Latest 200 punches across staff')}
+    ${topbar('Records','Attendance Report', 'Filter by staff and date range')}
     <div class="screen">
       <div class="card">
-        ${state.attendance.length===0 ? `<div class="empty">No attendance recorded yet.</div>` :
-          state.attendance.map(a=>`
-            <div class="attendance-item">
-              <div>
-                <div class="staff-name">${a.staffName}</div>
-                <div class="staff-sub mono">${fmtTs(a.ts)}</div>
-              </div>
-              <span class="badge ${a.type==='in'?'badge-in':'badge-out'}">${a.type==='in'?'Check In':'Check Out'}</span>
-            </div>
+        <label>Staff</label>
+        <select id="reportStaffSelect" onchange="setReportStaff(this.value)">
+          <option value="all" ${state.report.staffId==='all'?'selected':''}>All Staff</option>
+          ${state.staffList.map(s=>`<option value="${s.id}" ${state.report.staffId===s.id?'selected':''}>${s.name}</option>`).join('')}
+        </select>
+        <label>Date range</label>
+        <div class="chip-row">
+          ${[['today','Today'],['week','This Week'],['month','This Month'],['all','All Time']].map(([key,label])=>`
+            <button class="chip ${state.report.range===key?'active':''}" onclick="setReportRange('${key}')">${label}</button>
           `).join('')}
+        </div>
+      </div>
+
+      <div class="stat-row">
+        <div class="stat"><div class="num">${totalIn}</div><div class="lbl">Check-ins</div></div>
+        <div class="stat"><div class="num">${totalOut}</div><div class="lbl">Check-outs</div></div>
+        <div class="stat"><div class="num">${uniqueStaffPresent}</div><div class="lbl">Staff present</div></div>
+      </div>
+
+      <div class="card">
+        ${dateKeys.length===0 ? `<div class="empty">No attendance in this range.</div>` :
+          dateKeys.map(dk=>{
+            const items = groups[dk].sort((a,b)=>(b.ts||0)-(a.ts||0));
+            return `<div class="date-group-label">${fmtDateLabel(items[0].ts)}</div>` +
+              items.map(a=>`
+                <div class="attendance-item">
+                  <div class="att-left">
+                    <div class="staff-name" style="font-size:14px;">${state.report.staffId==='all' ? a.staffName : fmtTime(a.ts)}</div>
+                    ${state.report.staffId==='all' ? `<div class="staff-sub mono">${fmtTime(a.ts)}</div>` : ''}
+                  </div>
+                  <div class="att-right">
+                    <span class="badge ${a.type==='in'?'badge-in':'badge-out'}">${a.type==='in'?'Check In':'Check Out'}</span>
+                    ${a.lat && a.lng ? `<a class="map-link" href="https://www.google.com/maps?q=${a.lat},${a.lng}" target="_blank" rel="noopener">View location</a>` : ''}
+                  </div>
+                </div>
+              `).join('');
+          }).join('')}
       </div>
     </div>
     ${bottomNav('adminAttendance')}
   `;
 }
+function setReportStaff(id){ state.report.staffId = id; render(); }
+function setReportRange(range){ state.report.range = range; render(); }
 
 function renderStaffHome(app){
   const last = state.attendance[0];
   app.innerHTML = `
     ${topbar('Staff', state.session.name, state.session.businessName)}
     <div class="screen">
+      ${state.error ? `<div class="error-text" style="margin:0;">${state.error}</div>` : ''}
       <div class="card" style="text-align:center;">
         <div class="staff-sub" style="margin-bottom:14px;">
-          ${last ? `Last punch: <strong>${last.type==='in'?'Checked In':'Checked Out'}</strong> · ${fmtTs(last.ts)}` : 'No attendance yet today'}
+          ${last ? `Last punch: <strong>${last.type==='in'?'Checked In':'Checked Out'}</strong> · ${fmtTime(last.ts)}` : 'No attendance yet today'}
         </div>
         <button class="btn btn-marigold" onclick="go('scanning')">📷 Scan QR to Mark Attendance</button>
+        <div class="staff-sub" style="margin-top:10px;">Tip: you can also scan the office QR with your phone's normal camera app — it'll open straight here.</div>
       </div>
       <div class="card">
         <h3 style="margin:0 0 10px; font-size:15px;">My Recent Attendance</h3>
         ${state.attendance.length===0 ? `<div class="empty">Nothing here yet.</div>` :
           state.attendance.slice(0,10).map(a=>`
             <div class="attendance-item">
-              <div class="staff-sub mono">${fmtTs(a.ts)}</div>
+              <div class="staff-sub mono">${fmtDateLabel(a.ts)} · ${fmtTime(a.ts)}</div>
               <span class="badge ${a.type==='in'?'badge-in':'badge-out'}">${a.type==='in'?'In':'Out'}</span>
             </div>
           `).join('')}
@@ -730,32 +905,43 @@ function stopScanAndGo(screen){
   } else go(screen);
 }
 
+function extractBusinessId(decodedText){
+  // Supports both the new URL-based QR (?attend=businessId) and legacy JSON QR
+  try{
+    const url = new URL(decodedText);
+    const attend = url.searchParams.get('attend');
+    if (attend) return attend;
+  }catch(e){ /* not a URL, fall through */ }
+  try{
+    const payload = JSON.parse(decodedText);
+    if (payload.businessId) return payload.businessId;
+  }catch(e){}
+  return null;
+}
+
 let scanLock = false;
 async function onScanSuccess(decodedText){
   if (scanLock) return;
   scanLock = true;
   const statusEl = document.getElementById('scanStatus');
-  try{
-    const payload = JSON.parse(decodedText);
-    if (payload.businessId !== state.session.businessId){
-      statusEl.textContent = "This QR doesn't belong to your business.";
-      scanLock = false;
-      return;
-    }
-    statusEl.textContent = 'Getting your location...';
-    navigator.geolocation.getCurrentPosition(async (pos)=>{
-      const { latitude, longitude } = pos.coords;
-      const type = await markAttendance(state.session.businessId, state.session.staffId, state.session.name, latitude, longitude);
-      state.lastPunchType = type;
-      stopScanAndGo('punchResult');
-    }, (err)=>{
-      statusEl.textContent = 'Location permission is required to mark attendance.';
-      scanLock = false;
-    }, { enableHighAccuracy:true, timeout:10000 });
-  }catch(e){
+  const businessId = extractBusinessId(decodedText);
+  if (!businessId){
     statusEl.textContent = 'Invalid QR code, try again.';
     scanLock = false;
+    return;
   }
+  if (businessId !== state.session.businessId){
+    statusEl.textContent = "This QR doesn't belong to your business.";
+    scanLock = false;
+    return;
+  }
+  statusEl.textContent = 'Getting your location...';
+  stopScanAndGo('punching');
+  captureAndMark(state.session.businessId, state.session.staffId, state.session.name);
+}
+
+function renderPunching(app){
+  app.innerHTML = `<div class="spinner-box">Marking your attendance…</div>`;
 }
 
 function renderPunchResult(app){
@@ -775,7 +961,7 @@ function renderPunchResult(app){
   scanLock = false;
 }
 
-render();
+bootstrap();
 </script>
 </body>
 </html>
