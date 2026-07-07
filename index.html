@@ -552,6 +552,10 @@ function renderLogin(app){
         <input id="loginMobile" type="tel" maxlength="10" placeholder="9876543210">
         <label>PIN</label>
         <input id="loginPin" type="password" maxlength="6" placeholder="4-digit PIN">
+        <div style="display:flex; align-items:center; gap:8px; margin:-6px 0 14px;">
+          <input type="checkbox" id="rememberMe" checked style="width:auto; margin:0;">
+          <label for="rememberMe" style="text-transform:none; font-weight:500; font-size:13px; letter-spacing:normal; margin:0; color:var(--muted);">Keep me logged in on this device</label>
+        </div>
         ${state.error ? `<div class="error-text">${state.error}</div>` : ''}
         <button class="btn btn-primary" id="loginBtn" onclick="doLogin()">Continue</button>
         <div style="height:14px"></div>
@@ -563,13 +567,14 @@ function renderLogin(app){
 async function doLogin(){
   const mobile = document.getElementById('loginMobile').value.trim();
   const pin = document.getElementById('loginPin').value.trim();
+  const rememberMe = document.getElementById('rememberMe').checked;
   if (!mobile || !pin){ state.error='Enter mobile number and PIN.'; render(); return; }
   const btn = document.getElementById('loginBtn');
   btn.disabled = true; btn.textContent = 'Checking...';
   try{
     const session = await loginUser(mobile, pin);
     state.session = session;
-    saveSession(session);
+    if (rememberMe) saveSession(session); else clearSession();
     if (session.role === 'admin'){
       listenStaff(session.businessId);
       listenAttendance(session.businessId, null);
@@ -607,6 +612,10 @@ function renderRegisterBiz(app){
         <input id="regMobile" type="tel" maxlength="10" placeholder="9876543210">
         <label>Create a PIN</label>
         <input id="regPin" type="password" maxlength="6" placeholder="4-digit PIN">
+        <div style="display:flex; align-items:center; gap:8px; margin:-6px 0 14px;">
+          <input type="checkbox" id="regRememberMe" checked style="width:auto; margin:0;">
+          <label for="regRememberMe" style="text-transform:none; font-weight:500; font-size:13px; letter-spacing:normal; margin:0; color:var(--muted);">Keep me logged in on this device</label>
+        </div>
         ${state.error ? `<div class="error-text">${state.error}</div>` : ''}
         <button class="btn btn-marigold" id="regBtn" onclick="doRegister()">Create business</button>
         <div style="height:14px"></div>
@@ -632,7 +641,8 @@ async function doRegister(){
     const businessId = await registerBusiness(data);
     const session = { role:'admin', businessId, name:data.adminName, businessName:data.businessName };
     state.session = session;
-    saveSession(session);
+    const rememberMe = document.getElementById('regRememberMe').checked;
+    if (rememberMe) saveSession(session); else clearSession();
     listenStaff(businessId);
     listenAttendance(businessId, null);
     toast('Business created 🎉');
