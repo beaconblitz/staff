@@ -123,6 +123,62 @@
   }
   .chip.active{background:var(--indigo); border-color:var(--indigo); color:#fff;}
 
+  .manual-calendar{
+    border:1.5px solid var(--line);
+    border-radius:14px;
+    padding:12px;
+    margin:0 0 14px;
+    background:#fff;
+  }
+  .cal-head{
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    gap:10px;
+    margin-bottom:10px;
+  }
+  .cal-title{
+    font-family:'Sora',sans-serif;
+    font-weight:700;
+    color:var(--indigo);
+    font-size:14px;
+  }
+  .cal-nav{
+    width:38px;
+    height:34px;
+    border-radius:10px;
+    border:1.5px solid var(--line);
+    background:#fff;
+    color:var(--indigo);
+    font-size:18px;
+    cursor:pointer;
+  }
+  .cal-grid{
+    display:grid;
+    grid-template-columns:repeat(7, 1fr);
+    gap:6px;
+  }
+  .cal-weekday{
+    text-align:center;
+    font-size:10px;
+    font-weight:700;
+    color:var(--muted);
+    text-transform:uppercase;
+  }
+  .cal-day{
+    aspect-ratio:1;
+    border:none;
+    border-radius:10px;
+    background:#F7F5FC;
+    color:var(--ink);
+    font-family:'Inter',sans-serif;
+    font-weight:700;
+    cursor:pointer;
+  }
+  .cal-day.today{border:1.5px solid var(--marigold);}
+  .cal-day.selected{background:linear-gradient(120deg,#1B1550,#3D2E8C); color:#fff;}
+  .cal-empty{aspect-ratio:1;}
+
   .link{color:var(--indigo-2); font-weight:600; text-decoration:underline; cursor:pointer; background:none; border:none; padding:0; font-size:14px; font-family:'Inter',sans-serif;}
 
   .error-text{color:var(--danger); font-size:13px; margin:-8px 0 10px;}
@@ -288,7 +344,8 @@ const state = {
   error: '',
   lastPunchType: 'in',
   pendingAttendBiz: null,
-  report: { staffId: 'all', range: 'today' }
+  report: { staffId: 'all', staffType: 'all', range: 'today' },
+  manualAttendance: null
 };
 
 function toast(msg){
@@ -368,6 +425,7 @@ async function addStaff(businessId, data){
     pin: data.pin,
     gender: data.gender || '',
     designation: data.designation || '',
+    staffType: data.staffType || 'full-time',
     expectedCheckIn: data.expectedCheckIn || '09:30',
     expectedCheckOut: data.expectedCheckOut || '18:00',
     graceMinutes: data.graceMinutes != null && data.graceMinutes !== '' ? Number(data.graceMinutes) : 30,
@@ -382,6 +440,7 @@ async function updateStaff(businessId, staffId, data){
   await db.ref('businesses/' + businessId + '/staff/' + staffId).update({
     name: data.name,
     designation: data.designation || '',
+    staffType: data.staffType || 'full-time',
     expectedCheckIn: data.expectedCheckIn || '09:30',
     expectedCheckOut: data.expectedCheckOut || '18:00',
     graceMinutes: data.graceMinutes != null && data.graceMinutes !== '' ? Number(data.graceMinutes) : 30,
@@ -447,6 +506,13 @@ async function addManualAttendance(businessId, staffId, staffName, type, ts){
   await db.ref('businesses/' + businessId + '/attendance').push({
     staffId, staffName, type, lat:null, lng:null, ts, manual:true
   });
+}
+async function addManualAttendanceDay(businessId, staffId, staffName, inTs, outTs){
+  const ref = db.ref('businesses/' + businessId + '/attendance');
+  await Promise.all([
+    ref.push({ staffId, staffName, type:'in', lat:null, lng:null, ts:inTs, manual:true, manualPair:true }),
+    ref.push({ staffId, staffName, type:'out', lat:null, lng:null, ts:outTs, manual:true, manualPair:true })
+  ]);
 }
 
 /* ---- Meetings ---- */
@@ -892,6 +958,7 @@ function renderAdminStaff(app){
                 <div class="avatar">${(s.name||'?')[0].toUpperCase()}</div>
                 <div>
                   <div class="staff-name">${s.name}</div>
+                  <div style="margin:6px 0 2px;">${staffTypeBadgeHTML(s.staffType)}</div>
                   <div class="staff-sub">${s.designation || 'Staff'} · ${s.mobile}</div>
                 </div>
               </div>
@@ -917,6 +984,11 @@ function renderAddStaff(app){
         <input id="stPin" type="password" maxlength="6" placeholder="4-digit PIN">
         <label>Designation (optional)</label>
         <input id="stDesig" placeholder="e.g. Sales Executive">
+        <label>Employment type</label>
+        <select id="stStaffType">
+          <option value="full-time">Full Time</option>
+          <option value="part-time">Part Time</option>
+        </select>
         <label>Expected Check-In Time</label>
         <input id="stCheckIn" type="time" value="09:30">
         <label>Expected Check-Out Time</label>
@@ -940,6 +1012,20 @@ function openEditStaff(staffId){
   go('editStaff');
 }
 
+function staffTypeLabel(type){
+  return type === 'part-time' ? 'Part Time' : 'Full Time';
+}
+function staffTypeFor(staffId){
+  const staff = state.staffList.find(s=>s.id===staffId);
+  return staff ? (staff.staffType || 'full-time') : 'full-time';
+}
+function staffTypeBadgeHTML(type){
+  const normalized = type === 'part-time' ? 'part-time' : 'full-time';
+  const bg = normalized === 'part-time' ? 'var(--marigold-dim)' : '#EDEBFA';
+  const color = normalized === 'part-time' ? '#B85E1A' : 'var(--indigo-2)';
+  return `<span class="badge" style="background:${bg}; color:${color};">${staffTypeLabel(normalized)}</span>`;
+}
+
 function renderEditStaff(app){
   const s = state.staffList.find(x=>x.id===state.editingStaffId);
   if (!s){ go('adminStaff'); return; }
@@ -951,6 +1037,11 @@ function renderEditStaff(app){
         <input id="editName" value="${s.name || ''}">
         <label>Designation</label>
         <input id="editDesig" value="${s.designation || ''}" placeholder="e.g. Sales Executive">
+        <label>Employment type</label>
+        <select id="editStaffType">
+          <option value="full-time" ${(s.staffType || 'full-time')==='full-time'?'selected':''}>Full Time</option>
+          <option value="part-time" ${s.staffType==='part-time'?'selected':''}>Part Time</option>
+        </select>
         <label>Expected Check-In Time</label>
         <input id="editCheckIn" type="time" value="${s.expectedCheckIn || '09:30'}">
         <label>Expected Check-Out Time</label>
@@ -972,6 +1063,7 @@ async function doUpdateStaff(){
   const data = {
     name: document.getElementById('editName').value.trim(),
     designation: document.getElementById('editDesig').value.trim(),
+    staffType: document.getElementById('editStaffType').value,
     expectedCheckIn: document.getElementById('editCheckIn').value,
     expectedCheckOut: document.getElementById('editCheckOut').value,
     graceMinutes: document.getElementById('editGrace').value,
@@ -994,6 +1086,7 @@ async function doAddStaff(){
     mobile: document.getElementById('stMobile').value.trim(),
     pin: document.getElementById('stPin').value.trim(),
     designation: document.getElementById('stDesig').value.trim(),
+    staffType: document.getElementById('stStaffType').value,
     expectedCheckIn: document.getElementById('stCheckIn').value,
     expectedCheckOut: document.getElementById('stCheckOut').value,
     graceMinutes: document.getElementById('stGrace').value,
@@ -1200,6 +1293,7 @@ function renderAdminAttendance(app){
   const start = rangeStart(state.report.range);
   let filtered = state.attendance.filter(a => (a.ts||0) >= start);
   if (state.report.staffId !== 'all') filtered = filtered.filter(a => a.staffId === state.report.staffId);
+  if (state.report.staffType !== 'all') filtered = filtered.filter(a => staffTypeFor(a.staffId) === state.report.staffType);
 
   // group by date
   const groups = {};
@@ -1223,6 +1317,12 @@ function renderAdminAttendance(app){
           <option value="all" ${state.report.staffId==='all'?'selected':''}>All Staff</option>
           ${state.staffList.map(s=>`<option value="${s.id}" ${state.report.staffId===s.id?'selected':''}>${s.name}</option>`).join('')}
         </select>
+        <label>Employment type</label>
+        <div class="chip-row">
+          ${[['all','All'],['full-time','Full Time'],['part-time','Part Time']].map(([key,label])=>`
+            <button class="chip ${state.report.staffType===key?'active':''}" onclick="setReportStaffType('${key}')">${label}</button>
+          `).join('')}
+        </div>
         <label>Date range</label>
         <div class="chip-row">
           ${[['today','Today'],['week','This Week'],['month','This Month'],['all','All Time']].map(([key,label])=>`
@@ -1248,6 +1348,7 @@ function renderAdminAttendance(app){
                 <div class="attendance-item" style="cursor:pointer;" onclick="openEditAttendance('${a.id}')">
                   <div class="att-left">
                     <div class="staff-name" style="font-size:14px;">${state.report.staffId==='all' ? a.staffName : fmtTime(a.ts)}</div>
+                    <div>${staffTypeBadgeHTML(staffTypeFor(a.staffId))}</div>
                     ${state.report.staffId==='all' ? `<div class="staff-sub mono">${fmtTime(a.ts)}</div>` : ''}
                     ${a.manual ? `<div class="staff-sub" style="color:var(--marigold);">Manually added</div>` : ''}
                   </div>
@@ -1265,6 +1366,7 @@ function renderAdminAttendance(app){
   `;
 }
 function setReportStaff(id){ state.report.staffId = id; render(); }
+function setReportStaffType(type){ state.report.staffType = type; render(); }
 function setReportRange(range){ state.report.range = range; render(); }
 
 function openEditAttendance(recordId){
@@ -1324,26 +1426,93 @@ async function doDeleteAttendance(){
   go('adminAttendance');
 }
 
+function pad2(n){ return String(n).padStart(2,'0'); }
+function dateInputValue(dateObj){
+  return `${dateObj.getFullYear()}-${pad2(dateObj.getMonth()+1)}-${pad2(dateObj.getDate())}`;
+}
+function parseInputDate(dateVal){
+  const parts = (dateVal || '').split('-').map(Number);
+  if (parts.length !== 3 || parts.some(isNaN)) return new Date();
+  return new Date(parts[0], parts[1]-1, parts[2]);
+}
+function ensureManualAttendanceState(){
+  if (state.manualAttendance) return;
+  const today = new Date();
+  state.manualAttendance = {
+    selectedDate: dateInputValue(today),
+    month: today.getMonth(),
+    year: today.getFullYear()
+  };
+}
+function shiftManualCalendar(delta){
+  ensureManualAttendanceState();
+  const d = new Date(state.manualAttendance.year, state.manualAttendance.month + delta, 1);
+  state.manualAttendance.month = d.getMonth();
+  state.manualAttendance.year = d.getFullYear();
+  render();
+}
+function selectManualDate(dateVal){
+  ensureManualAttendanceState();
+  const d = parseInputDate(dateVal);
+  state.manualAttendance.selectedDate = dateVal;
+  state.manualAttendance.month = d.getMonth();
+  state.manualAttendance.year = d.getFullYear();
+  render();
+}
+function manualCalendarHTML(){
+  ensureManualAttendanceState();
+  const cal = state.manualAttendance;
+  const selected = parseInputDate(cal.selectedDate);
+  const todayVal = dateInputValue(new Date());
+  const first = new Date(cal.year, cal.month, 1);
+  const daysInMonth = new Date(cal.year, cal.month + 1, 0).getDate();
+  const blanks = first.getDay();
+  const monthTitle = first.toLocaleDateString('en-IN', { month:'long', year:'numeric' });
+  const weekdays = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+  const cells = [];
+  for (let i=0; i<blanks; i++) cells.push(`<div class="cal-empty"></div>`);
+  for (let day=1; day<=daysInMonth; day++){
+    const d = new Date(cal.year, cal.month, day);
+    const val = dateInputValue(d);
+    const cls = `${val===todayVal?' today':''}${val===cal.selectedDate?' selected':''}`;
+    cells.push(`<button class="cal-day${cls}" onclick="selectManualDate('${val}')">${day}</button>`);
+  }
+  return `
+    <div class="manual-calendar">
+      <div class="cal-head">
+        <button class="cal-nav" onclick="shiftManualCalendar(-1)">‹</button>
+        <div class="cal-title">${monthTitle}</div>
+        <button class="cal-nav" onclick="shiftManualCalendar(1)">›</button>
+      </div>
+      <div class="cal-grid">
+        ${weekdays.map(w=>`<div class="cal-weekday">${w}</div>`).join('')}
+        ${cells.join('')}
+      </div>
+    </div>
+    <input id="manAttDate" type="hidden" value="${cal.selectedDate}">
+    <div class="staff-sub" style="margin:-4px 0 14px;">Selected date: ${selected.toLocaleDateString('en-IN', { day:'2-digit', month:'short', year:'numeric' })}</div>
+  `;
+}
+
 function renderAddManualAttendance(app){
+  ensureManualAttendanceState();
   app.innerHTML = `
     ${topbar('Records','Add Manual Entry','For a missed punch')}
     <div class="screen">
       <div class="card">
         <label>Staff</label>
         <select id="manAttStaff">
-          ${state.staffList.map(s=>`<option value="${s.id}" data-name="${s.name}">${s.name}</option>`).join('')}
+          ${state.staffList.map(s=>`<option value="${s.id}" data-name="${s.name}">${s.name} - ${staffTypeLabel(s.staffType)}</option>`).join('')}
         </select>
+        <div class="staff-sub" style="margin:-8px 0 14px;">Pick a date and enter both punch times. One Check In + one Check Out becomes 1 attendance day.</div>
         <label>Date</label>
-        <input id="manAttDate" type="date" value="${new Date().toISOString().slice(0,10)}">
-        <label>Time</label>
-        <input id="manAttTime" type="time">
-        <label>Type</label>
-        <select id="manAttType">
-          <option value="in">Check In</option>
-          <option value="out">Check Out</option>
-        </select>
+        ${manualCalendarHTML()}
+        <label>Check-In Time</label>
+        <input id="manAttInTime" type="time" value="10:00">
+        <label>Check-Out Time</label>
+        <input id="manAttOutTime" type="time" value="18:00">
         ${state.error ? `<div class="error-text">${state.error}</div>` : ''}
-        <button class="btn btn-marigold" id="manAttBtn" onclick="doAddManualAttendance()">Add Entry</button>
+        <button class="btn btn-marigold" id="manAttBtn" onclick="doAddManualAttendance()">Add 1 Attendance</button>
         <div style="height:10px"></div>
         <button class="btn btn-ghost" onclick="go('adminAttendance')">← Cancel</button>
       </div>
@@ -1355,15 +1524,17 @@ async function doAddManualAttendance(){
   const staffId = staffSelect.value;
   const staffName = staffSelect.selectedOptions[0].getAttribute('data-name');
   const dateVal = document.getElementById('manAttDate').value;
-  const timeVal = document.getElementById('manAttTime').value;
-  const type = document.getElementById('manAttType').value;
-  if (!staffId || !dateVal || !timeVal){ state.error='Fill all fields.'; render(); return; }
-  const ts = new Date(dateVal + 'T' + timeVal + ':00').getTime();
+  const inTimeVal = document.getElementById('manAttInTime').value;
+  const outTimeVal = document.getElementById('manAttOutTime').value;
+  if (!staffId || !dateVal || !inTimeVal || !outTimeVal){ state.error='Fill staff, date, check-in and check-out time.'; render(); return; }
+  const inTs = new Date(dateVal + 'T' + inTimeVal + ':00').getTime();
+  const outTs = new Date(dateVal + 'T' + outTimeVal + ':00').getTime();
+  if (outTs <= inTs){ state.error='Check-out time must be after check-in time.'; render(); return; }
   const btn = document.getElementById('manAttBtn');
   btn.disabled = true; btn.textContent='Adding...';
   try{
-    await addManualAttendance(state.session.businessId, staffId, staffName, type, ts);
-    toast('Manual entry added');
+    await addManualAttendanceDay(state.session.businessId, staffId, staffName, inTs, outTs);
+    toast('Manual attendance added');
     go('adminAttendance');
   }catch(e){
     state.error = e.message; render();
