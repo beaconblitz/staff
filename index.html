@@ -191,6 +191,23 @@
   .bottom-nav button.active{color:var(--marigold);}
   .bottom-nav .icon{font-size:20px;}
 
+  .section-title{font-family:'Sora',sans-serif; font-weight:700; font-size:16px; margin:0 0 4px;}
+
+  .tile-grid{
+    display:grid; grid-template-columns:repeat(3, 1fr); gap:16px 10px;
+  }
+  .tile{
+    display:flex; flex-direction:column; align-items:center; gap:8px;
+    background:none; border:none; cursor:pointer; padding:0; font-family:'Inter',sans-serif;
+  }
+  .tile-icon{
+    width:56px; height:56px; border-radius:50%;
+    display:flex; align-items:center; justify-content:center; font-size:24px;
+  }
+  .tile-label{font-size:12px; font-weight:600; color:var(--ink); text-align:center; line-height:1.25;}
+
+  .list-empty-note{text-align:center; color:var(--muted); font-size:13px; padding:16px 0;}
+
   .scan-punch{
     text-align:center;
     padding:30px 20px;
@@ -260,8 +277,14 @@ const state = {
   session: null,      // { businessId, role, staffId?, name, businessName }
   staffList: [],
   attendance: [],
+  meetings: [],
+  leaves: [],
+  complaints: [],
   staffListenerRef: null,
   attendanceListenerRef: null,
+  meetingsListenerRef: null,
+  leavesListenerRef: null,
+  complaintsListenerRef: null,
   error: '',
   lastPunchType: 'in',
   pendingAttendBiz: null,
@@ -405,12 +428,94 @@ async function getTodayPunchStatus(businessId, staffId){
   return { hasIn, hasOut, lastInTime, lastOutTime };
 }
 
-async function markAttendance(businessId, staffId, staffName, type, lat, lng){
+async function markAttendance(businessId, staffId, staffName, type, lat, lng, extra){
   await db.ref('businesses/' + businessId + '/attendance').push({
-    staffId, staffName, type, lat, lng,
-    ts: firebase.database.ServerValue.TIMESTAMP
+    staffId, staffName, type, lat: lat||null, lng: lng||null,
+    ts: firebase.database.ServerValue.TIMESTAMP,
+    ...(extra||{})
   });
   return type;
+}
+
+async function updateAttendanceRecord(businessId, recordId, data){
+  await db.ref('businesses/' + businessId + '/attendance/' + recordId).update(data);
+}
+async function deleteAttendanceRecord(businessId, recordId){
+  await db.ref('businesses/' + businessId + '/attendance/' + recordId).remove();
+}
+async function addManualAttendance(businessId, staffId, staffName, type, ts){
+  await db.ref('businesses/' + businessId + '/attendance').push({
+    staffId, staffName, type, lat:null, lng:null, ts, manual:true
+  });
+}
+
+/* ---- Meetings ---- */
+function listenMeetings(businessId){
+  if (state.meetingsListenerRef) state.meetingsListenerRef.off();
+  const ref = db.ref('businesses/' + businessId + '/meetings');
+  state.meetingsListenerRef = ref;
+  ref.on('value', snap=>{
+    const val = snap.val() || {};
+    state.meetings = Object.keys(val).map(id=>({ id, ...val[id] }))
+      .sort((a,b)=> (a.date+ (a.time||'')).localeCompare(b.date+(b.time||'')));
+    if (['adminMeetings','staffMeetings','adminHome','staffHome'].includes(state.screen)) render();
+  });
+}
+async function addMeeting(businessId, data){
+  const ref = db.ref('businesses/' + businessId + '/meetings').push();
+  await ref.set({
+    title: data.title, date: data.date, time: data.time || '', notes: data.notes || '',
+    createdAt: firebase.database.ServerValue.TIMESTAMP
+  });
+}
+async function deleteMeeting(businessId, meetingId){
+  await db.ref('businesses/' + businessId + '/meetings/' + meetingId).remove();
+}
+
+/* ---- Leave requests ---- */
+function listenLeaves(businessId, staffId){
+  if (state.leavesListenerRef) state.leavesListenerRef.off();
+  const ref = db.ref('businesses/' + businessId + '/leaves');
+  state.leavesListenerRef = ref;
+  ref.on('value', snap=>{
+    const val = snap.val() || {};
+    let list = Object.keys(val).map(id=>({ id, ...val[id] }));
+    if (staffId) list = list.filter(l=>l.staffId===staffId);
+    list.sort((a,b)=> (b.createdAt||0)-(a.createdAt||0));
+    state.leaves = list;
+    if (['adminLeaves','applyLeave'].includes(state.screen)) render();
+  });
+}
+async function submitLeave(businessId, staffId, staffName, data){
+  const ref = db.ref('businesses/' + businessId + '/leaves').push();
+  await ref.set({
+    staffId, staffName, fromDate: data.fromDate, toDate: data.toDate, reason: data.reason,
+    status: 'pending', createdAt: firebase.database.ServerValue.TIMESTAMP
+  });
+}
+async function updateLeaveStatus(businessId, leaveId, status){
+  await db.ref('businesses/' + businessId + '/leaves/' + leaveId).update({ status });
+}
+
+/* ---- Complaints ---- */
+function listenComplaints(businessId, staffId){
+  if (state.complaintsListenerRef) state.complaintsListenerRef.off();
+  const ref = db.ref('businesses/' + businessId + '/complaints');
+  state.complaintsListenerRef = ref;
+  ref.on('value', snap=>{
+    const val = snap.val() || {};
+    let list = Object.keys(val).map(id=>({ id, ...val[id] }));
+    if (staffId) list = list.filter(c=>c.staffId===staffId);
+    list.sort((a,b)=> (b.createdAt||0)-(a.createdAt||0));
+    state.complaints = list;
+    if (['adminComplaints'].includes(state.screen)) render();
+  });
+}
+async function submitComplaint(businessId, staffId, staffName, message){
+  const ref = db.ref('businesses/' + businessId + '/complaints').push();
+  await ref.set({
+    staffId, staffName, message, createdAt: firebase.database.ServerValue.TIMESTAMP
+  });
 }
 
 /* ---------------------------------------------------------
@@ -428,8 +533,13 @@ async function bootstrap(){
     if (existing.role === 'admin'){
       listenStaff(existing.businessId);
       listenAttendance(existing.businessId, null);
+      listenMeetings(existing.businessId);
+      listenLeaves(existing.businessId, null);
+      listenComplaints(existing.businessId, null);
     } else {
       listenAttendance(existing.businessId, existing.staffId);
+      listenMeetings(existing.businessId);
+      listenLeaves(existing.businessId, existing.staffId);
     }
   }
 
@@ -524,8 +634,17 @@ function render(){
     addStaff: renderAddStaff,
     editStaff: renderEditStaff,
     adminAttendance: renderAdminAttendance,
+    editAttendance: renderEditAttendance,
+    addManualAttendance: renderAddManualAttendance,
     adminSalary: renderAdminSalary,
     staffSalary: renderStaffSalary,
+    applyLeave: renderApplyLeave,
+    staffMeetings: renderStaffMeetings,
+    complaintForm: renderComplaintForm,
+    rewards: renderRewards,
+    adminMeetings: renderAdminMeetings,
+    adminLeaves: renderAdminLeaves,
+    adminComplaints: renderAdminComplaints,
     staffHome: renderStaffHome,
     scanning: renderScanning,
     punching: renderPunching,
@@ -613,9 +732,14 @@ async function doLogin(){
     if (session.role === 'admin'){
       listenStaff(session.businessId);
       listenAttendance(session.businessId, null);
+      listenMeetings(session.businessId);
+      listenLeaves(session.businessId, null);
+      listenComplaints(session.businessId, null);
       go('adminHome');
     } else {
       listenAttendance(session.businessId, session.staffId);
+      listenMeetings(session.businessId);
+      listenLeaves(session.businessId, session.staffId);
       if (state.pendingAttendBiz && state.pendingAttendBiz === session.businessId){
         const biz = state.pendingAttendBiz;
         state.pendingAttendBiz = null;
@@ -680,6 +804,9 @@ async function doRegister(){
     if (rememberMe) saveSession(session); else clearSession();
     listenStaff(businessId);
     listenAttendance(businessId, null);
+    listenMeetings(businessId);
+    listenLeaves(businessId, null);
+    listenComplaints(businessId, null);
     toast('Business created 🎉');
     go('adminHome');
   }catch(e){
@@ -710,6 +837,13 @@ function renderAdminHome(app){
       <div class="card" style="display:flex; gap:10px;">
         <button class="btn btn-outline" onclick="go('addStaff')">+ Add Staff</button>
         <button class="btn btn-outline" onclick="go('adminAttendance')">View Attendance</button>
+      </div>
+
+      <div class="section-title">More tools</div>
+      <div class="tile-grid">
+        ${tileHTML('🤝','#FDE3EE','Meetings',"go('adminMeetings')")}
+        ${tileHTML('🗓️','#FFE3CC','Leave Requests',"go('adminLeaves')")}
+        ${tileHTML('📣','#FDE7E7','Complaints',"go('adminComplaints')")}
       </div>
     </div>
     ${bottomNav('adminHome')}
@@ -912,7 +1046,7 @@ function getDayStatus(staff, dateObj, staffAttendance){
   return { status, inTime:inRec.ts, outTime: outRec?outRec.ts:null };
 }
 
-function dailyRate(staff){ return (Number(staff.monthlySalary)||0) / 30; }
+function dailyRate(staff){ return (Number(staff.monthlySalary)||0) / 26; }
 function payForStatus(staff, status){
   if (status==='present') return dailyRate(staff);
   if (status==='half') return dailyRate(staff)/2;
@@ -1103,20 +1237,24 @@ function renderAdminAttendance(app){
         <div class="stat"><div class="num">${uniqueStaffPresent}</div><div class="lbl">Staff present</div></div>
       </div>
 
+      <button class="btn btn-outline" onclick="go('addManualAttendance')">+ Add Manual Entry</button>
+
       <div class="card">
         ${dateKeys.length===0 ? `<div class="empty">No attendance in this range.</div>` :
           dateKeys.map(dk=>{
             const items = groups[dk].sort((a,b)=>(b.ts||0)-(a.ts||0));
             return `<div class="date-group-label">${fmtDateLabel(items[0].ts)}</div>` +
               items.map(a=>`
-                <div class="attendance-item">
+                <div class="attendance-item" style="cursor:pointer;" onclick="openEditAttendance('${a.id}')">
                   <div class="att-left">
                     <div class="staff-name" style="font-size:14px;">${state.report.staffId==='all' ? a.staffName : fmtTime(a.ts)}</div>
                     ${state.report.staffId==='all' ? `<div class="staff-sub mono">${fmtTime(a.ts)}</div>` : ''}
+                    ${a.manual ? `<div class="staff-sub" style="color:var(--marigold);">Manually added</div>` : ''}
                   </div>
                   <div class="att-right">
                     <span class="badge ${a.type==='in'?'badge-in':'badge-out'}">${a.type==='in'?'Check In':'Check Out'}</span>
-                    ${a.lat && a.lng ? `<a class="map-link" href="https://www.google.com/maps?q=${a.lat},${a.lng}" target="_blank" rel="noopener">View location</a>` : ''}
+                    ${a.lat && a.lng ? `<a class="map-link" href="https://www.google.com/maps?q=${a.lat},${a.lng}" target="_blank" rel="noopener" onclick="event.stopPropagation()">View location</a>` : ''}
+                    <span class="staff-sub">Edit ›</span>
                   </div>
                 </div>
               `).join('');
@@ -1129,28 +1267,192 @@ function renderAdminAttendance(app){
 function setReportStaff(id){ state.report.staffId = id; render(); }
 function setReportRange(range){ state.report.range = range; render(); }
 
+function openEditAttendance(recordId){
+  state.editingAttendanceId = recordId;
+  go('editAttendance');
+}
+
+function renderEditAttendance(app){
+  const rec = state.attendance.find(a=>a.id===state.editingAttendanceId);
+  if (!rec){ go('adminAttendance'); return; }
+  const d = new Date(rec.ts);
+  const dateVal = d.toISOString().slice(0,10);
+  const timeVal = d.toTimeString().slice(0,5);
+  app.innerHTML = `
+    ${topbar('Records','Edit Attendance', rec.staffName)}
+    <div class="screen">
+      <div class="card">
+        <label>Date</label>
+        <input id="editAttDate" type="date" value="${dateVal}">
+        <label>Time</label>
+        <input id="editAttTime" type="time" value="${timeVal}">
+        <label>Type</label>
+        <select id="editAttType">
+          <option value="in" ${rec.type==='in'?'selected':''}>Check In</option>
+          <option value="out" ${rec.type==='out'?'selected':''}>Check Out</option>
+        </select>
+        ${state.error ? `<div class="error-text">${state.error}</div>` : ''}
+        <button class="btn btn-primary" id="saveAttBtn" onclick="doSaveAttendanceEdit()">Save Changes</button>
+        <div style="height:10px"></div>
+        <button class="btn btn-outline" style="border-color:var(--danger); color:var(--danger);" onclick="doDeleteAttendance()">Delete This Record</button>
+        <div style="height:10px"></div>
+        <button class="btn btn-ghost" onclick="go('adminAttendance')">← Cancel</button>
+      </div>
+    </div>
+  `;
+}
+
+async function doSaveAttendanceEdit(){
+  const dateVal = document.getElementById('editAttDate').value;
+  const timeVal = document.getElementById('editAttTime').value;
+  const type = document.getElementById('editAttType').value;
+  if (!dateVal || !timeVal){ state.error='Pick a date and time.'; render(); return; }
+  const newTs = new Date(dateVal + 'T' + timeVal + ':00').getTime();
+  const btn = document.getElementById('saveAttBtn');
+  btn.disabled = true; btn.textContent='Saving...';
+  try{
+    await updateAttendanceRecord(state.session.businessId, state.editingAttendanceId, { ts:newTs, type });
+    toast('Attendance updated');
+    go('adminAttendance');
+  }catch(e){
+    state.error = e.message; render();
+  }
+}
+async function doDeleteAttendance(){
+  await deleteAttendanceRecord(state.session.businessId, state.editingAttendanceId);
+  toast('Record deleted');
+  go('adminAttendance');
+}
+
+function renderAddManualAttendance(app){
+  app.innerHTML = `
+    ${topbar('Records','Add Manual Entry','For a missed punch')}
+    <div class="screen">
+      <div class="card">
+        <label>Staff</label>
+        <select id="manAttStaff">
+          ${state.staffList.map(s=>`<option value="${s.id}" data-name="${s.name}">${s.name}</option>`).join('')}
+        </select>
+        <label>Date</label>
+        <input id="manAttDate" type="date" value="${new Date().toISOString().slice(0,10)}">
+        <label>Time</label>
+        <input id="manAttTime" type="time">
+        <label>Type</label>
+        <select id="manAttType">
+          <option value="in">Check In</option>
+          <option value="out">Check Out</option>
+        </select>
+        ${state.error ? `<div class="error-text">${state.error}</div>` : ''}
+        <button class="btn btn-marigold" id="manAttBtn" onclick="doAddManualAttendance()">Add Entry</button>
+        <div style="height:10px"></div>
+        <button class="btn btn-ghost" onclick="go('adminAttendance')">← Cancel</button>
+      </div>
+    </div>
+  `;
+}
+async function doAddManualAttendance(){
+  const staffSelect = document.getElementById('manAttStaff');
+  const staffId = staffSelect.value;
+  const staffName = staffSelect.selectedOptions[0].getAttribute('data-name');
+  const dateVal = document.getElementById('manAttDate').value;
+  const timeVal = document.getElementById('manAttTime').value;
+  const type = document.getElementById('manAttType').value;
+  if (!staffId || !dateVal || !timeVal){ state.error='Fill all fields.'; render(); return; }
+  const ts = new Date(dateVal + 'T' + timeVal + ':00').getTime();
+  const btn = document.getElementById('manAttBtn');
+  btn.disabled = true; btn.textContent='Adding...';
+  try{
+    await addManualAttendance(state.session.businessId, staffId, staffName, type, ts);
+    toast('Manual entry added');
+    go('adminAttendance');
+  }catch(e){
+    state.error = e.message; render();
+  }
+}
+
+const SHIFT_DURATION_MS = 9 * 60 * 60 * 1000;
+let autoCheckoutTimeout = null;
+let shiftCountdownInterval = null;
+
+function clearShiftTimers(){
+  if (autoCheckoutTimeout) clearTimeout(autoCheckoutTimeout);
+  if (shiftCountdownInterval) clearInterval(shiftCountdownInterval);
+  autoCheckoutTimeout = null; shiftCountdownInterval = null;
+}
+
+function getTodayInOut(staffAttendance){
+  const todayStr = new Date().toDateString();
+  const todays = staffAttendance.filter(a=> a.ts && new Date(a.ts).toDateString()===todayStr);
+  const inRec = todays.filter(a=>a.type==='in').sort((a,b)=>b.ts-a.ts)[0] || null;
+  const outRec = todays.filter(a=>a.type==='out').sort((a,b)=>b.ts-a.ts)[0] || null;
+  return { inRec, outRec };
+}
+
+function setupShiftTimer(inTs){
+  clearShiftTimers();
+  const remaining = inTs + SHIFT_DURATION_MS - Date.now();
+  if (remaining <= 0){ doAutoCheckout(); return; }
+  autoCheckoutTimeout = setTimeout(doAutoCheckout, remaining);
+  shiftCountdownInterval = setInterval(()=>{ if (state.screen==='staffHome') render(); }, 60000);
+}
+
+async function doAutoCheckout(){
+  clearShiftTimers();
+  state.activeShiftInTs = null;
+  if (!state.session || state.session.role !== 'staff') return;
+  const { inRec, outRec } = getTodayInOut(state.attendance);
+  if (!inRec || (outRec && outRec.ts >= inRec.ts)) return;
+  await markAttendance(state.session.businessId, state.session.staffId, state.session.name, 'out', null, null, { auto:true });
+  toast('Auto checked-out — your 9 hour shift ended');
+  if (state.screen==='staffHome') render();
+}
+
+function shiftTimerNote(){
+  const { inRec, outRec } = getTodayInOut(state.attendance);
+  const onShift = inRec && (!outRec || outRec.ts < inRec.ts);
+  if (onShift){
+    if (state.activeShiftInTs !== inRec.ts){
+      state.activeShiftInTs = inRec.ts;
+      setupShiftTimer(inRec.ts);
+    }
+    const remainingMs = Math.max(0, inRec.ts + SHIFT_DURATION_MS - Date.now());
+    const h = Math.floor(remainingMs/3600000);
+    const m = Math.floor((remainingMs%3600000)/60000);
+    return `⏱ Auto checkout in ${h}h ${m}m`;
+  } else {
+    if (state.activeShiftInTs){ clearShiftTimers(); state.activeShiftInTs = null; }
+    return '';
+  }
+}
+
+function tileHTML(icon, bg, label, onclickJs){
+  return `<button class="tile" onclick="${onclickJs}">
+    <div class="tile-icon" style="background:${bg};">${icon}</div>
+    <div class="tile-label">${label}</div>
+  </button>`;
+}
+
 function renderStaffHome(app){
   const last = state.attendance[0];
+  const upcomingMeetings = state.meetings.filter(m=> new Date(m.date) >= new Date(new Date().toDateString()));
   app.innerHTML = `
-    ${topbar('Staff', state.session.name, state.session.businessName)}
+    ${topbar('Hello,', state.session.name + '!', state.session.businessName)}
     <div class="screen">
       ${state.error ? `<div class="error-text" style="margin:0;">${state.error}</div>` : ''}
-      <div class="card" style="text-align:center;">
-        <div class="staff-sub" style="margin-bottom:14px;">
-          ${last ? `Last punch: <strong>${last.type==='in'?'Checked In':'Checked Out'}</strong> · ${fmtTime(last.ts)}` : 'No attendance yet today'}
-        </div>
-        <button class="btn btn-marigold" onclick="go('scanning')">📷 Scan QR to Mark Attendance</button>
-        <div class="staff-sub" style="margin-top:10px;">Tip: you can also scan the office QR with your phone's normal camera app — it'll open straight here.</div>
+      <div class="staff-sub" style="margin-bottom:-6px;">
+        ${last ? `Last punch: <strong>${last.type==='in'?'Checked In':'Checked Out'}</strong> · ${fmtTime(last.ts)}` : 'No attendance yet today'}
+        ${upcomingMeetings.length ? ` · 📅 ${upcomingMeetings.length} upcoming meeting(s)` : ''}
       </div>
-      <div class="card">
-        <h3 style="margin:0 0 10px; font-size:15px;">My Recent Attendance</h3>
-        ${state.attendance.length===0 ? `<div class="empty">Nothing here yet.</div>` :
-          state.attendance.slice(0,10).map(a=>`
-            <div class="attendance-item">
-              <div class="staff-sub mono">${fmtDateLabel(a.ts)} · ${fmtTime(a.ts)}</div>
-              <span class="badge ${a.type==='in'?'badge-in':'badge-out'}">${a.type==='in'?'In':'Out'}</span>
-            </div>
-          `).join('')}
+      ${shiftTimerNote() ? `<div class="staff-sub" style="font-weight:600; color:var(--indigo);">${shiftTimerNote()}</div>` : ''}
+      <div class="section-title">What do you want to do today?</div>
+      <div class="tile-grid">
+        ${tileHTML('📷','#E9E6FF','Attendance',"go('scanning')")}
+        ${tileHTML('🗓️','#FFE3CC','Apply Leave',"go('applyLeave')")}
+        ${tileHTML('💵','#DDF3E7','Payslip',"go('staffSalary')")}
+        ${tileHTML('🤝','#FDE3EE','Meeting',"go('staffMeetings')")}
+        ${tileHTML('✅','#E3F0FF','Todo',"window.open('https://beaconblitz.github.io/bb-to-do/','_blank')")}
+        ${tileHTML('📣','#FDE7E7','Complaints',"go('complaintForm')")}
+        ${tileHTML('🎁','#FFF3D6','Rewards',"go('rewards')")}
       </div>
     </div>
     ${bottomNav('staffHome')}
@@ -1158,6 +1460,245 @@ function renderStaffHome(app){
 }
 
 let html5QrCode = null;
+
+/* ---------------- Apply Leave (staff) ---------------- */
+function renderApplyLeave(app){
+  app.innerHTML = `
+    ${topbar('Leave','Apply for Leave','Admin will review your request')}
+    <div class="screen">
+      <div class="card">
+        <label>From date</label>
+        <input id="leaveFrom" type="date">
+        <label>To date</label>
+        <input id="leaveTo" type="date">
+        <label>Reason</label>
+        <input id="leaveReason" placeholder="e.g. Family function">
+        ${state.error ? `<div class="error-text">${state.error}</div>` : ''}
+        <button class="btn btn-marigold" id="applyLeaveBtn" onclick="doApplyLeave()">Submit Request</button>
+        <div style="height:8px"></div>
+        <button class="btn btn-ghost" onclick="go('staffHome')">← Back</button>
+      </div>
+      <div class="card">
+        <h3 style="margin:0 0 10px; font-size:15px;">My Leave Requests</h3>
+        ${state.leaves.length===0 ? `<div class="list-empty-note">No leave requests yet.</div>` :
+          state.leaves.map(l=>`
+            <div class="attendance-item">
+              <div class="att-left">
+                <div class="staff-name" style="font-size:14px;">${l.fromDate}${l.toDate && l.toDate!==l.fromDate ? ' → '+l.toDate : ''}</div>
+                <div class="staff-sub">${l.reason||''}</div>
+              </div>
+              <span class="badge ${l.status==='approved'?'badge-in':l.status==='rejected'?'badge-out':'badge-pending'}">${l.status}</span>
+            </div>
+          `).join('')}
+      </div>
+    </div>
+  `;
+}
+async function doApplyLeave(){
+  const fromDate = document.getElementById('leaveFrom').value;
+  const toDate = document.getElementById('leaveTo').value || fromDate;
+  const reason = document.getElementById('leaveReason').value.trim();
+  if (!fromDate || !reason){ state.error='Please pick a date and add a reason.'; render(); return; }
+  const btn = document.getElementById('applyLeaveBtn');
+  btn.disabled = true; btn.textContent='Submitting...';
+  try{
+    await submitLeave(state.session.businessId, state.session.staffId, state.session.name, { fromDate, toDate, reason });
+    toast('Leave request sent to admin');
+    go('applyLeave');
+  }catch(e){
+    state.error = e.message; render();
+  }
+}
+
+/* ---------------- Meetings (staff view) ---------------- */
+function renderStaffMeetings(app){
+  app.innerHTML = `
+    ${topbar('Team','Meetings','Meetings added by your admin')}
+    <div class="screen">
+      <div class="card">
+        ${state.meetings.length===0 ? `<div class="empty">No meetings scheduled.</div>` :
+          state.meetings.map(m=>`
+            <div class="attendance-item">
+              <div class="att-left">
+                <div class="staff-name" style="font-size:14px;">${m.title}</div>
+                <div class="staff-sub">${m.notes||''}</div>
+              </div>
+              <div class="att-right">
+                <span class="staff-sub mono">${m.date}${m.time ? ' · '+m.time : ''}</span>
+              </div>
+            </div>
+          `).join('')}
+      </div>
+      <button class="btn btn-ghost" onclick="go('staffHome')">← Back</button>
+    </div>
+  `;
+}
+
+/* ---------------- Complaints (staff submits) ---------------- */
+function renderComplaintForm(app){
+  app.innerHTML = `
+    ${topbar('Support','Raise a Complaint','Goes straight to your admin')}
+    <div class="screen">
+      <div class="card">
+        <label>What's the issue?</label>
+        <textarea id="complaintMsg" rows="5" style="width:100%; padding:14px; border-radius:12px; border:1.5px solid var(--line); font-size:15px; font-family:'Inter',sans-serif;" placeholder="Describe the issue..."></textarea>
+        <div style="height:14px"></div>
+        ${state.error ? `<div class="error-text">${state.error}</div>` : ''}
+        <button class="btn btn-marigold" id="complaintBtn" onclick="doSubmitComplaint()">Send to Admin</button>
+        <div style="height:8px"></div>
+        <button class="btn btn-ghost" onclick="go('staffHome')">← Cancel</button>
+      </div>
+    </div>
+  `;
+}
+async function doSubmitComplaint(){
+  const message = document.getElementById('complaintMsg').value.trim();
+  if (!message){ state.error='Please describe the issue.'; render(); return; }
+  const btn = document.getElementById('complaintBtn');
+  btn.disabled = true; btn.textContent='Sending...';
+  try{
+    await submitComplaint(state.session.businessId, state.session.staffId, state.session.name, message);
+    const adminMobile = state.session.adminMobile;
+    if (adminMobile){
+      const waMsg = `📣 Complaint from ${state.session.name} (${state.session.businessName}): ${message}`;
+      window.open(`https://wa.me/91${adminMobile}?text=${encodeURIComponent(waMsg)}`, '_blank');
+    }
+    toast('Complaint sent to admin');
+    go('staffHome');
+  }catch(e){
+    state.error = e.message; render();
+  }
+}
+
+/* ---------------- Rewards (placeholder) ---------------- */
+function renderRewards(app){
+  app.innerHTML = `
+    ${topbar('Recognition','Rewards','Coming soon')}
+    <div class="screen">
+      <div class="card" style="text-align:center; padding:40px 20px;">
+        <div style="font-size:40px; margin-bottom:10px;">🎁</div>
+        <div class="staff-name" style="margin-bottom:6px;">Rewards program coming soon</div>
+        <div class="staff-sub">Your admin will be able to recognise good attendance and performance here.</div>
+      </div>
+      <button class="btn btn-ghost" onclick="go('staffHome')">← Back</button>
+    </div>
+  `;
+}
+
+/* ---------------- Meetings (admin manages) ---------------- */
+function renderAdminMeetings(app){
+  app.innerHTML = `
+    ${topbar('Team','Meetings','Add a meeting — staff will see it on their Meeting tile')}
+    <div class="screen">
+      <div class="card">
+        <label>Title</label>
+        <input id="mtTitle" placeholder="e.g. Monthly Review">
+        <label>Date</label>
+        <input id="mtDate" type="date">
+        <label>Time (optional)</label>
+        <input id="mtTime" type="time">
+        <label>Notes (optional)</label>
+        <input id="mtNotes" placeholder="e.g. Bring last month's report">
+        ${state.error ? `<div class="error-text">${state.error}</div>` : ''}
+        <button class="btn btn-marigold" id="addMeetingBtn" onclick="doAddMeeting()">Add Meeting</button>
+      </div>
+      <div class="card">
+        ${state.meetings.length===0 ? `<div class="empty">No meetings added yet.</div>` :
+          state.meetings.map(m=>`
+            <div class="attendance-item">
+              <div class="att-left">
+                <div class="staff-name" style="font-size:14px;">${m.title}</div>
+                <div class="staff-sub">${m.notes||''}</div>
+              </div>
+              <div class="att-right">
+                <span class="staff-sub mono">${m.date}${m.time ? ' · '+m.time : ''}</span>
+                <button class="link" style="color:var(--danger);" onclick="doDeleteMeeting('${m.id}')">Remove</button>
+              </div>
+            </div>
+          `).join('')}
+      </div>
+    </div>
+    ${bottomNav('adminHome')}
+  `;
+}
+async function doAddMeeting(){
+  const data = {
+    title: document.getElementById('mtTitle').value.trim(),
+    date: document.getElementById('mtDate').value,
+    time: document.getElementById('mtTime').value,
+    notes: document.getElementById('mtNotes').value.trim()
+  };
+  if (!data.title || !data.date){ state.error='Title and date are required.'; render(); return; }
+  const btn = document.getElementById('addMeetingBtn');
+  btn.disabled = true; btn.textContent='Adding...';
+  try{
+    await addMeeting(state.session.businessId, data);
+    toast('Meeting added');
+    go('adminMeetings');
+  }catch(e){
+    state.error = e.message; render();
+  }
+}
+async function doDeleteMeeting(meetingId){
+  await deleteMeeting(state.session.businessId, meetingId);
+  toast('Meeting removed');
+}
+
+/* ---------------- Leave requests (admin approves/rejects) ---------------- */
+function renderAdminLeaves(app){
+  app.innerHTML = `
+    ${topbar('Team','Leave Requests','Approve or reject staff leave')}
+    <div class="screen">
+      <div class="card">
+        ${state.leaves.length===0 ? `<div class="empty">No leave requests yet.</div>` :
+          state.leaves.map(l=>`
+            <div class="attendance-item">
+              <div class="att-left">
+                <div class="staff-name" style="font-size:14px;">${l.staffName}</div>
+                <div class="staff-sub">${l.fromDate}${l.toDate && l.toDate!==l.fromDate ? ' → '+l.toDate : ''} · ${l.reason||''}</div>
+              </div>
+              <div class="att-right">
+                ${l.status==='pending' ? `
+                  <div style="display:flex; gap:6px;">
+                    <button class="link" onclick="doLeaveStatus('${l.id}','approved')">Approve</button>
+                    <button class="link" style="color:var(--danger);" onclick="doLeaveStatus('${l.id}','rejected')">Reject</button>
+                  </div>
+                ` : `<span class="badge ${l.status==='approved'?'badge-in':'badge-out'}">${l.status}</span>`}
+              </div>
+            </div>
+          `).join('')}
+      </div>
+    </div>
+    ${bottomNav('adminHome')}
+  `;
+}
+async function doLeaveStatus(leaveId, status){
+  await updateLeaveStatus(state.session.businessId, leaveId, status);
+  toast('Leave request ' + status);
+}
+
+/* ---------------- Complaints (admin views) ---------------- */
+function renderAdminComplaints(app){
+  app.innerHTML = `
+    ${topbar('Team','Complaints','Submitted by staff')}
+    <div class="screen">
+      <div class="card">
+        ${state.complaints.length===0 ? `<div class="empty">No complaints yet.</div>` :
+          state.complaints.map(c=>`
+            <div class="attendance-item">
+              <div class="att-left">
+                <div class="staff-name" style="font-size:14px;">${c.staffName}</div>
+                <div class="staff-sub">${c.message}</div>
+              </div>
+              <span class="staff-sub mono">${fmtDateLabel(c.createdAt)}</span>
+            </div>
+          `).join('')}
+      </div>
+    </div>
+    ${bottomNav('adminHome')}
+  `;
+}
+
 function renderScanning(app){
   app.innerHTML = `
     ${topbar('Attendance','Scan Business QR','Point your camera at the QR shown on the admin dashboard')}
