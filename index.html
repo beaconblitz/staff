@@ -176,6 +176,7 @@
   .badge-out{background:#FDE7E7; color:var(--danger);}
   .badge-half{background:var(--marigold-dim); color:#B85E1A;}
   .badge-pending{background:#EDEBFA; color:var(--muted);}
+  .badge-holiday{background:#E3F0FF; color:#2E6FBF;}
   .map-link{font-size:11px; color:var(--indigo-2); text-decoration:none; font-weight:600;}
 
   .bottom-nav{
@@ -1120,6 +1121,7 @@ function getDayStatus(staff, dateObj, staffAttendance){
   const dayStr = dateObj.toDateString();
   const todayStr = new Date().toDateString();
   if (dateObj > new Date() && dayStr !== todayStr) return { status:'future' };
+  if (dateObj.getDay() === 0) return { status:'holiday' }; // Sunday = paid holiday
 
   const dayRecords = staffAttendance.filter(a=> a.ts && new Date(a.ts).toDateString()===dayStr);
   const inRec = dayRecords.filter(a=>a.type==='in').sort((a,b)=>a.ts-b.ts)[0];
@@ -1146,13 +1148,14 @@ function dailyRate(staff){ return (Number(staff.monthlySalary)||0) / 26; }
 function payForStatus(staff, status){
   if (status==='present') return dailyRate(staff);
   if (status==='half') return dailyRate(staff)/2;
+  if (status==='holiday') return dailyRate(staff);
   return 0;
 }
 function statusLabel(status){
-  return { present:'Present', half:'Half Day', absent:'Absent', pending:'Pending', future:'—' }[status] || status;
+  return { present:'Present', half:'Half Day', absent:'Absent', pending:'Pending', future:'—', holiday:'Holiday (Sun)' }[status] || status;
 }
 function statusBadgeClass(status){
-  return { present:'badge-in', half:'badge-half', absent:'badge-out', pending:'badge-pending', future:'badge-pending' }[status] || '';
+  return { present:'badge-in', half:'badge-half', absent:'badge-out', pending:'badge-pending', future:'badge-pending', holiday:'badge-holiday' }[status] || '';
 }
 function fmtTime(ts){
   if (!ts) return '—';
@@ -1255,6 +1258,7 @@ function renderSalaryBody(staff, staffAttendance){
   const presentDays = rows.filter(r=>r.status==='present').length;
   const halfDays = rows.filter(r=>r.status==='half').length;
   const absentDays = rows.filter(r=>r.status==='absent').length;
+  const holidayDays = rows.filter(r=>r.status==='holiday').length;
   const totalPay = rows.reduce((sum,r)=>sum+r.pay, 0);
 
   return `
@@ -1262,6 +1266,9 @@ function renderSalaryBody(staff, staffAttendance){
       <div class="stat"><div class="num">${presentDays}</div><div class="lbl">Present</div></div>
       <div class="stat"><div class="num">${halfDays}</div><div class="lbl">Half Day</div></div>
       <div class="stat"><div class="num">${absentDays}</div><div class="lbl">Absent</div></div>
+    </div>
+    <div class="stat-row">
+      <div class="stat"><div class="num">${holidayDays}</div><div class="lbl">Sunday Holidays (Paid)</div></div>
     </div>
     <div class="card" style="text-align:center;">
       <div class="staff-sub">Earned this month (₹${(Number(staff.monthlySalary)||0).toLocaleString('en-IN')} / month)</div>
@@ -1467,6 +1474,7 @@ function renderAddManualAttendance(app){
       if (st==='present') dotColor = 'var(--success)';
       else if (st==='half') dotColor = 'var(--marigold)';
       else if (st==='absent') dotColor = 'var(--danger)';
+      else if (st==='holiday') dotColor = '#2E6FBF';
     }
     const isSelected = state.manualCal.selectedDate === dateStr;
     cells += `
@@ -1501,7 +1509,7 @@ function renderAddManualAttendance(app){
         <div style="display:grid; grid-template-columns:repeat(7,1fr); gap:2px;">
           ${cells}
         </div>
-        <div class="staff-sub" style="margin-top:10px;">🟢 Present · 🟠 Half Day · 🔴 Absent</div>
+        <div class="staff-sub" style="margin-top:10px;">🟢 Present · 🟠 Half Day · 🔴 Absent · 🔵 Sunday Holiday</div>
       </div>
 
       ${state.manualCal.selectedDate ? `
