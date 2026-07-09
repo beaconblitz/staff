@@ -1367,7 +1367,10 @@ function renderAdminAttendance(app){
                   <div class="att-right">
                     <span class="badge ${a.type==='in'?'badge-in':'badge-out'}">${a.type==='in'?'Check In':'Check Out'}</span>
                     ${a.lat && a.lng ? `<a class="map-link" href="https://www.google.com/maps?q=${a.lat},${a.lng}" target="_blank" rel="noopener" onclick="event.stopPropagation()">View location</a>` : ''}
-                    <span class="staff-sub">Edit ›</span>
+                    <div style="display:flex; gap:10px; align-items:center;">
+                      <span class="staff-sub">Edit ›</span>
+                      <button class="link" style="color:var(--danger);" onclick="event.stopPropagation(); doQuickDeleteAttendance('${a.id}')">🗑</button>
+                    </div>
                   </div>
                 </div>
               `).join('');
@@ -1433,9 +1436,20 @@ async function doSaveAttendanceEdit(){
   }
 }
 async function doDeleteAttendance(){
+  const confirmed = window.confirm('Delete this attendance record? This cannot be undone.');
+  if (!confirmed) return;
   await deleteAttendanceRecord(state.session.businessId, state.editingAttendanceId);
   toast('Record deleted');
   go('adminAttendance');
+}
+
+async function doQuickDeleteAttendance(recordId){
+  const rec = state.attendance.find(a=>a.id===recordId);
+  const label = rec ? `${rec.staffName}'s ${rec.type==='in'?'Check In':'Check Out'} at ${fmtTime(rec.ts)}` : 'this record';
+  const confirmed = window.confirm(`Delete ${label}? This cannot be undone.`);
+  if (!confirmed) return;
+  await deleteAttendanceRecord(state.session.businessId, recordId);
+  toast('Record deleted');
 }
 
 function ensureManualCalState(){
