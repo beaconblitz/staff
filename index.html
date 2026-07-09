@@ -1536,6 +1536,15 @@ async function doAddManualAttendance(){
   const timeVal = document.getElementById('manAttTime').value;
   const type = document.getElementById('manAttType').value;
   if (!staff || !dateVal || !timeVal){ state.error='Pick a time.'; render(); return; }
+
+  const staffAttendance = state.attendance.filter(a=>a.staffId===staff.id);
+  const existingSameType = staffAttendance.find(a=> a.ts && toDateKey(new Date(a.ts))===dateVal && a.type===type);
+  if (existingSameType){
+    const label = type==='in' ? 'Check In' : 'Check Out';
+    const confirmed = window.confirm(`${staff.name} already has a ${label} at ${fmtTime(existingSameType.ts)} on this date. Add another one anyway?`);
+    if (!confirmed) return;
+  }
+
   const ts = new Date(dateVal + 'T' + timeVal + ':00').getTime();
   const btn = document.getElementById('manAttBtn');
   btn.disabled = true; btn.textContent='Adding...';
