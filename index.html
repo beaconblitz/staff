@@ -1148,11 +1148,10 @@ function dailyRate(staff){ return (Number(staff.monthlySalary)||0) / 26; }
 function payForStatus(staff, status){
   if (status==='present') return dailyRate(staff);
   if (status==='half') return dailyRate(staff)/2;
-  if (status==='holiday') return dailyRate(staff);
-  return 0;
+  return 0; // holiday, absent, pending, future = unpaid
 }
 function statusLabel(status){
-  return { present:'Present', half:'Half Day', absent:'Absent', pending:'Pending', future:'—', holiday:'Holiday (Sun)' }[status] || status;
+  return { present:'Present', half:'Half Day', absent:'Absent', pending:'Pending', future:'—', holiday:'Sunday (Unpaid)' }[status] || status;
 }
 function statusBadgeClass(status){
   return { present:'badge-in', half:'badge-half', absent:'badge-out', pending:'badge-pending', future:'badge-pending', holiday:'badge-holiday' }[status] || '';
@@ -1268,7 +1267,7 @@ function renderSalaryBody(staff, staffAttendance){
       <div class="stat"><div class="num">${absentDays}</div><div class="lbl">Absent</div></div>
     </div>
     <div class="stat-row">
-      <div class="stat"><div class="num">${holidayDays}</div><div class="lbl">Sunday Holidays (Paid)</div></div>
+      <div class="stat"><div class="num">${holidayDays}</div><div class="lbl">Sunday Holidays (Unpaid)</div></div>
     </div>
     <div class="card" style="text-align:center;">
       <div class="staff-sub">Earned this month (₹${(Number(staff.monthlySalary)||0).toLocaleString('en-IN')} / month)</div>
@@ -1509,7 +1508,7 @@ function renderAddManualAttendance(app){
         <div style="display:grid; grid-template-columns:repeat(7,1fr); gap:2px;">
           ${cells}
         </div>
-        <div class="staff-sub" style="margin-top:10px;">🟢 Present · 🟠 Half Day · 🔴 Absent · 🔵 Sunday Holiday</div>
+        <div class="staff-sub" style="margin-top:10px;">🟢 Present · 🟠 Half Day · 🔴 Absent · 🔵 Sunday (Unpaid)</div>
       </div>
 
       ${state.manualCal.selectedDate ? `
