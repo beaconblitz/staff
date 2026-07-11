@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
 <title>Beaconblitz Staff — Attendance</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Sora:wght@500;600;700;800&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@500;600&display=swap" rel="stylesheet">
@@ -12,28 +12,23 @@
 <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
 <style>
   :root{
-    --ink:#18202F;
-    --indigo:#17324D;
-    --indigo-2:#236B73;
-    --marigold:#F27A54;
-    --marigold-dim:#FFE6DC;
-    --cream:#F3F7F6;
+    --ink:#161233;
+    --indigo:#1B1550;
+    --indigo-2:#2E2A78;
+    --marigold:#FF8A3D;
+    --marigold-dim:#FFE3CC;
+    --cream:#FBF8F3;
     --paper:#FFFFFF;
-    --muted:#647184;
-    --line:#DCE7E6;
-    --success:#238A65;
-    --danger:#C94C4C;
-    --radius:8px;
-    --shadow:0 18px 42px rgba(24,32,47,.10);
-    --shadow-soft:0 8px 24px rgba(24,32,47,.07);
+    --muted:#6B6885;
+    --line:#E7E3F5;
+    --success:#2E9E6D;
+    --danger:#D64545;
+    --radius:18px;
   }
   *{box-sizing:border-box;}
   html,body{margin:0;padding:0;}
   body{
-    min-height:100vh;
-    background:
-      linear-gradient(135deg, rgba(35,107,115,.10), rgba(242,122,84,.08) 42%, rgba(243,247,246,.96) 72%),
-      var(--cream);
+    background:var(--cream);
     font-family:'Inter',sans-serif;
     color:var(--ink);
     -webkit-font-smoothing:antialiased;
@@ -42,98 +37,88 @@
   .mono{font-family:'JetBrains Mono',monospace;}
 
   #app{
-    width:100%;
-    max-width:480px;
+    max-width:460px;
     margin:0 auto;
     min-height:100vh;
     background:var(--cream);
     position:relative;
     display:flex;
     flex-direction:column;
-    overflow:hidden;
   }
 
   .topbar{
-    background:
-      linear-gradient(135deg, rgba(255,255,255,.10), rgba(255,255,255,0) 36%),
-      linear-gradient(135deg, #17324D 0%, #236B73 58%, #F27A54 140%);
+    background:linear-gradient(135deg, #1B1550 0%, #3D2E8C 45%, #C2417A 85%, #FF8A3D 120%);
     color:#fff;
-    padding:24px 20px 28px;
-    border-radius:0 0 18px 18px;
-    box-shadow:0 18px 40px rgba(23,50,77,.20);
+    padding:22px 20px 26px;
+    border-radius:0 0 26px 26px;
   }
   .topbar .eyebrow{
     font-size:12px;
-    letter-spacing:0;
+    letter-spacing:.14em;
     text-transform:uppercase;
-    color:#D4ECEB;
+    color:#C9C4F0;
     font-weight:600;
     margin-bottom:6px;
   }
   .topbar h1{
     font-size:24px;
     margin:0;
-    font-weight:800;
-    line-height:1.08;
+    font-weight:700;
   }
-  .topbar p{margin:8px 0 0; color:#E5F4F2; font-size:14px; line-height:1.45;}
+  .topbar p{margin:6px 0 0; color:#C9C4F0; font-size:14px;}
 
-  .screen{padding:18px; flex:1; display:flex; flex-direction:column; gap:14px;}
+  .screen{padding:20px; flex:1; display:flex; flex-direction:column; gap:16px;}
 
   .card{
     background:var(--paper);
     border-radius:var(--radius);
-    padding:18px;
+    padding:20px;
     border:1px solid var(--line);
-    box-shadow:var(--shadow-soft);
   }
 
-  label{display:block; font-size:11px; font-weight:700; color:var(--muted); text-transform:uppercase; letter-spacing:0; margin-bottom:6px;}
-  input, select, textarea{
+  label{display:block; font-size:12px; font-weight:600; color:var(--muted); text-transform:uppercase; letter-spacing:.06em; margin-bottom:6px;}
+  input, select{
     width:100%;
-    padding:13px 14px;
-    border-radius:8px;
+    padding:14px 14px;
+    border-radius:12px;
     border:1.5px solid var(--line);
     font-size:16px;
     font-family:'Inter',sans-serif;
     background:#fff;
     color:var(--ink);
     margin-bottom:14px;
-    transition:border-color .15s ease, box-shadow .15s ease, background .15s ease;
   }
-  input:focus, select:focus, textarea:focus{outline:none; border-color:var(--indigo-2); box-shadow:0 0 0 4px rgba(35,107,115,.14);}
+  input:focus, select:focus{outline:none; border-color:var(--indigo-2);}
 
   .btn{
     display:flex; align-items:center; justify-content:center; gap:8px;
     width:100%;
-    min-height:46px;
-    padding:13px 18px;
-    border-radius:8px;
+    padding:15px 18px;
+    border-radius:14px;
     border:none;
     font-family:'Sora',sans-serif;
     font-weight:600;
     font-size:15px;
     cursor:pointer;
-    transition:transform .1s ease, opacity .15s ease, box-shadow .15s ease, background .15s ease;
+    transition:transform .1s ease, opacity .15s ease;
   }
   .btn:active{transform:scale(0.98);}
-  .btn-primary{background:linear-gradient(120deg,#17324D,#236B73); color:#fff; box-shadow:0 10px 22px rgba(35,107,115,.20);}
-  .btn-marigold{background:linear-gradient(120deg,#F27A54,#D85F7A); color:#fff; box-shadow:0 10px 22px rgba(242,122,84,.20);}
+  .btn-primary{background:linear-gradient(120deg,#1B1550,#3D2E8C); color:#fff;}
+  .btn-marigold{background:linear-gradient(120deg,#FF8A3D,#C2417A); color:#fff;}
   .btn-outline{background:transparent; color:var(--indigo); border:1.5px solid var(--indigo);}
   .btn:disabled{opacity:.45; cursor:not-allowed;}
   .btn-ghost{background:transparent; color:var(--muted); font-weight:500; padding:8px;}
-  .btn:hover{box-shadow:0 12px 26px rgba(24,32,47,.12);}
 
   .role-toggle{display:flex; gap:8px; margin-bottom:14px;}
   .role-toggle button{
-    flex:1; padding:12px; border-radius:8px; border:1.5px solid var(--line);
+    flex:1; padding:12px; border-radius:12px; border:1.5px solid var(--line);
     background:#fff; font-family:'Sora',sans-serif; font-weight:600; font-size:14px; color:var(--muted); cursor:pointer;
   }
-  .role-toggle button.active{background:linear-gradient(120deg,#17324D,#236B73); border-color:var(--indigo); color:#fff;}
+  .role-toggle button.active{background:linear-gradient(120deg,#1B1550,#3D2E8C); border-color:var(--indigo); color:#fff;}
 
   .chip-row{display:flex; gap:8px; flex-wrap:wrap; margin-bottom:14px;}
   .chip{
-    padding:8px 14px; border-radius:999px; border:1.5px solid var(--line); background:#fff;
+    padding:8px 14px; border-radius:20px; border:1.5px solid var(--line); background:#fff;
     font-size:12px; font-weight:600; color:var(--muted); cursor:pointer; font-family:'Inter',sans-serif;
   }
   .chip.active{background:var(--indigo); border-color:var(--indigo); color:#fff;}
@@ -142,14 +127,14 @@
 
   .error-text{color:var(--danger); font-size:13px; margin:-8px 0 10px;}
 
-  .stat-row{display:grid; grid-template-columns:repeat(3, minmax(0, 1fr)); gap:10px;}
-  .stat{background:linear-gradient(180deg,#fff,#F8FBFA); border:1px solid var(--line); border-radius:8px; padding:14px 10px; text-align:center; box-shadow:var(--shadow-soft);}
+  .stat-row{display:flex; gap:12px;}
+  .stat{flex:1; background:var(--marigold-dim); border-radius:14px; padding:14px; text-align:center;}
   .stat .num{font-family:'Sora',sans-serif; font-weight:800; font-size:22px; color:var(--indigo);}
-  .stat .lbl{font-size:11px; color:var(--muted); text-transform:uppercase; letter-spacing:0; margin-top:2px;}
+  .stat .lbl{font-size:11px; color:var(--muted); text-transform:uppercase; letter-spacing:.05em; margin-top:2px;}
 
   .qr-ticket{
     background:#fff;
-    border-radius:8px;
+    border-radius:20px;
     padding:22px;
     text-align:center;
     position:relative;
@@ -167,7 +152,7 @@
   .staff-name{font-weight:600; font-size:15px;}
   .staff-sub{font-size:12px; color:var(--muted);}
   .avatar{
-    width:40px;height:40px;border-radius:8px;background:linear-gradient(135deg,var(--indigo),var(--indigo-2));color:#fff;
+    width:38px;height:38px;border-radius:10px;background:var(--indigo-2);color:#fff;
     display:flex;align-items:center;justify-content:center;font-family:'Sora',sans-serif;font-weight:700;
     margin-right:12px;
   }
@@ -179,14 +164,13 @@
   }
   .attendance-item{
     display:flex; align-items:center; justify-content:space-between;
-    gap:12px;
-    padding:13px 0; border-bottom:1px solid var(--line);
+    padding:12px 0; border-bottom:1px solid var(--line);
   }
   .attendance-item:last-child{border-bottom:none;}
   .att-left{display:flex; flex-direction:column; gap:2px;}
   .att-right{display:flex; flex-direction:column; align-items:flex-end; gap:4px;}
   .badge{
-    font-size:10px; font-weight:800; padding:5px 9px; border-radius:999px; text-transform:uppercase; letter-spacing:0;
+    font-size:11px; font-weight:700; padding:4px 10px; border-radius:20px; text-transform:uppercase; letter-spacing:.04em;
   }
   .badge-in{background:#DDF3E7; color:var(--success);}
   .badge-out{background:#FDE7E7; color:var(--danger);}
@@ -198,12 +182,8 @@
   .bottom-nav{
     display:flex;
     border-top:1px solid var(--line);
-    background:rgba(255,255,255,.94);
-    backdrop-filter:blur(14px);
-    padding:9px 6px 12px;
-    position:sticky;
-    bottom:0;
-    z-index:20;
+    background:#fff;
+    padding:10px 6px 14px;
   }
   .bottom-nav button{
     flex:1; background:none; border:none; display:flex; flex-direction:column; align-items:center; gap:4px;
@@ -215,18 +195,14 @@
   .section-title{font-family:'Sora',sans-serif; font-weight:700; font-size:16px; margin:0 0 4px;}
 
   .tile-grid{
-    display:grid; grid-template-columns:repeat(3, 1fr); gap:12px;
+    display:grid; grid-template-columns:repeat(3, 1fr); gap:16px 10px;
   }
   .tile{
     display:flex; flex-direction:column; align-items:center; gap:8px;
-    background:#fff; border:1px solid var(--line); border-radius:8px; cursor:pointer; padding:14px 8px; font-family:'Inter',sans-serif;
-    min-height:104px;
-    box-shadow:var(--shadow-soft);
-    transition:transform .12s ease, box-shadow .12s ease;
+    background:none; border:none; cursor:pointer; padding:0; font-family:'Inter',sans-serif;
   }
-  .tile:hover{transform:translateY(-1px); box-shadow:var(--shadow);}
   .tile-icon{
-    width:50px; height:50px; border-radius:8px;
+    width:56px; height:56px; border-radius:50%;
     display:flex; align-items:center; justify-content:center; font-size:24px;
   }
   .tile-label{font-size:12px; font-weight:600; color:var(--ink); text-align:center; line-height:1.25;}
@@ -247,89 +223,20 @@
   .scan-punch .time{font-family:'JetBrains Mono',monospace; font-size:26px; font-weight:600; color:var(--indigo);}
   .scan-punch .date{color:var(--muted); font-size:13px; margin-top:4px;}
 
-  #reader{border-radius:8px; overflow:hidden;}
+  #reader{border-radius:16px; overflow:hidden;}
   .toast{
     position:fixed; bottom:20px; left:50%; transform:translateX(-50%);
-    background:var(--ink); color:#fff; padding:12px 20px; border-radius:8px; font-size:13px;
+    background:var(--ink); color:#fff; padding:12px 20px; border-radius:12px; font-size:13px;
     max-width:400px; text-align:center; z-index:999;
   }
   .empty{
     text-align:center; padding:30px 10px; color:var(--muted); font-size:14px;
   }
   .config-warning{
-    background:#FFF4E8; border:1.5px solid var(--marigold); border-radius:8px; padding:16px; font-size:13px; color:#7A4B12; line-height:1.5;
+    background:#FFF4E8; border:1.5px solid var(--marigold); border-radius:14px; padding:16px; font-size:13px; color:#7A4B12; line-height:1.5;
   }
   .config-warning code{background:#fff; padding:2px 6px; border-radius:6px;}
   .spinner-box{text-align:center; padding:40px 20px; color:var(--muted);}
-
-  @media (max-width:380px){
-    .screen{padding:14px; gap:12px;}
-    .card{padding:15px;}
-    .tile-grid{gap:8px;}
-    .tile{min-height:96px; padding:12px 6px;}
-    .tile-icon{width:44px; height:44px; font-size:21px;}
-    .tile-label{font-size:11px;}
-    .stat-row{gap:8px;}
-    .stat{padding:12px 6px;}
-  }
-
-  @media (min-width:760px){
-    body{padding:24px;}
-    #app{
-      max-width:1120px;
-      min-height:calc(100vh - 48px);
-      border:1px solid rgba(220,231,230,.85);
-      border-radius:18px;
-      box-shadow:var(--shadow);
-    }
-    .topbar{
-      padding:32px 36px;
-      border-radius:18px 18px 0 0;
-    }
-    .topbar h1{font-size:32px;}
-    .screen{
-      padding:28px 36px 32px;
-      display:grid;
-      grid-template-columns:repeat(12, minmax(0, 1fr));
-      align-content:start;
-      gap:18px;
-    }
-    .screen > *{grid-column:1 / -1;}
-    .screen > .card{padding:22px;}
-    .stat-row{grid-template-columns:repeat(auto-fit, minmax(150px, 1fr));}
-    .tile-grid{
-      grid-column:1 / -1;
-      grid-template-columns:repeat(auto-fit, minmax(140px, 1fr));
-      gap:14px;
-    }
-    .tile{
-      min-height:126px;
-      justify-content:center;
-    }
-    .tile-icon{
-      width:58px;
-      height:58px;
-      font-size:26px;
-    }
-    .attendance-item{padding:15px 0;}
-    .bottom-nav{
-      justify-content:center;
-      gap:8px;
-      padding:12px 20px;
-      border-radius:0 0 18px 18px;
-    }
-    .bottom-nav button{
-      flex:0 1 132px;
-      border-radius:8px;
-      padding:8px 10px;
-    }
-    .bottom-nav button.active{background:#FFF0EA;}
-  }
-
-  @media (min-width:980px){
-    .screen:has(> .card:nth-child(2):last-child) > .card:nth-child(1){grid-column:1 / span 5;}
-    .screen:has(> .card:nth-child(2):last-child) > .card:nth-child(2){grid-column:6 / -1;}
-  }
 </style>
 </head>
 <body>
@@ -374,11 +281,13 @@ const state = {
   meetings: [],
   leaves: [],
   complaints: [],
+  apps: [],
   staffListenerRef: null,
   attendanceListenerRef: null,
   meetingsListenerRef: null,
   leavesListenerRef: null,
   complaintsListenerRef: null,
+  appsListenerRef: null,
   error: '',
   lastPunchType: 'in',
   pendingAttendBiz: null,
@@ -602,7 +511,7 @@ function listenLeaves(businessId, staffId){
     if (staffId) list = list.filter(l=>l.staffId===staffId);
     list.sort((a,b)=> (b.createdAt||0)-(a.createdAt||0));
     state.leaves = list;
-    if (['adminLeaves','applyLeave','adminSalary','staffSalary','addManualAttendance'].includes(state.screen)) render();
+    if (['adminLeaves','applyLeave'].includes(state.screen)) render();
   });
 }
 async function submitLeave(businessId, staffId, staffName, data){
@@ -637,6 +546,29 @@ async function submitComplaint(businessId, staffId, staffName, message){
   });
 }
 
+/* ---- Other Apps (custom links, visible to everyone in the business) ---- */
+function listenApps(businessId){
+  if (state.appsListenerRef) state.appsListenerRef.off();
+  const ref = db.ref('businesses/' + businessId + '/apps');
+  state.appsListenerRef = ref;
+  ref.on('value', snap=>{
+    const val = snap.val() || {};
+    state.apps = Object.keys(val).map(id=>({ id, ...val[id] }))
+      .sort((a,b)=> (a.name||'').localeCompare(b.name||''));
+    if (['adminApps','adminHome','staffHome'].includes(state.screen)) render();
+  });
+}
+async function addApp(businessId, data){
+  const ref = db.ref('businesses/' + businessId + '/apps').push();
+  await ref.set({
+    name: data.name, url: data.url, icon: data.icon || '🔗',
+    createdAt: firebase.database.ServerValue.TIMESTAMP
+  });
+}
+async function deleteApp(businessId, appId){
+  await db.ref('businesses/' + businessId + '/apps/' + appId).remove();
+}
+
 /* ---------------------------------------------------------
    BOOTSTRAP — restore session + handle QR deep-link (?attend=businessId)
    --------------------------------------------------------- */
@@ -655,10 +587,12 @@ async function bootstrap(){
       listenMeetings(existing.businessId);
       listenLeaves(existing.businessId, null);
       listenComplaints(existing.businessId, null);
+      listenApps(existing.businessId);
     } else {
       listenAttendance(existing.businessId, existing.staffId);
       listenMeetings(existing.businessId);
       listenLeaves(existing.businessId, existing.staffId);
+      listenApps(existing.businessId);
     }
   }
 
@@ -764,6 +698,7 @@ function render(){
     adminMeetings: renderAdminMeetings,
     adminLeaves: renderAdminLeaves,
     adminComplaints: renderAdminComplaints,
+    adminApps: renderAdminApps,
     staffHome: renderStaffHome,
     scanning: renderScanning,
     punching: renderPunching,
@@ -827,7 +762,7 @@ function renderLogin(app){
         <input id="loginPin" type="password" maxlength="6" placeholder="4-digit PIN">
         <div style="display:flex; align-items:center; gap:8px; margin:-6px 0 14px;">
           <input type="checkbox" id="rememberMe" checked style="width:auto; margin:0;">
-          <label for="rememberMe" style="text-transform:none; font-weight:500; font-size:13px; letter-spacing:0; margin:0; color:var(--muted);">Keep me logged in on this device</label>
+          <label for="rememberMe" style="text-transform:none; font-weight:500; font-size:13px; letter-spacing:normal; margin:0; color:var(--muted);">Keep me logged in on this device</label>
         </div>
         ${state.error ? `<div class="error-text">${state.error}</div>` : ''}
         <button class="btn btn-primary" id="loginBtn" onclick="doLogin()">Continue</button>
@@ -854,11 +789,13 @@ async function doLogin(){
       listenMeetings(session.businessId);
       listenLeaves(session.businessId, null);
       listenComplaints(session.businessId, null);
+      listenApps(session.businessId);
       go('adminHome');
     } else {
       listenAttendance(session.businessId, session.staffId);
       listenMeetings(session.businessId);
       listenLeaves(session.businessId, session.staffId);
+      listenApps(session.businessId);
       if (state.pendingAttendBiz && state.pendingAttendBiz === session.businessId){
         const biz = state.pendingAttendBiz;
         state.pendingAttendBiz = null;
@@ -892,7 +829,7 @@ function renderRegisterBiz(app){
         <input id="regPin" type="password" maxlength="6" placeholder="4-digit PIN">
         <div style="display:flex; align-items:center; gap:8px; margin:-6px 0 14px;">
           <input type="checkbox" id="regRememberMe" checked style="width:auto; margin:0;">
-          <label for="regRememberMe" style="text-transform:none; font-weight:500; font-size:13px; letter-spacing:0; margin:0; color:var(--muted);">Keep me logged in on this device</label>
+          <label for="regRememberMe" style="text-transform:none; font-weight:500; font-size:13px; letter-spacing:normal; margin:0; color:var(--muted);">Keep me logged in on this device</label>
         </div>
         ${state.error ? `<div class="error-text">${state.error}</div>` : ''}
         <button class="btn btn-marigold" id="regBtn" onclick="doRegister()">Create business</button>
@@ -926,6 +863,7 @@ async function doRegister(){
     listenMeetings(businessId);
     listenLeaves(businessId, null);
     listenComplaints(businessId, null);
+    listenApps(businessId);
     toast('Business created 🎉');
     go('adminHome');
   }catch(e){
@@ -963,7 +901,14 @@ function renderAdminHome(app){
         ${tileHTML('🤝','#FDE3EE','Meetings',"go('adminMeetings')")}
         ${tileHTML('🗓️','#FFE3CC','Leave Requests',"go('adminLeaves')")}
         ${tileHTML('📣','#FDE7E7','Complaints',"go('adminComplaints')")}
+        ${tileHTML('🧩','#E3F0FF','Manage Apps',"go('adminApps')")}
       </div>
+      ${state.apps.length ? `
+        <div class="section-title">Your Apps</div>
+        <div class="tile-grid">
+          ${state.apps.map(a=>tileHTML(a.icon||'🔗','#E9E6FF', a.name, `window.open('${a.url}','_blank')`)).join('')}
+        </div>
+      ` : ''}
     </div>
     ${bottomNav('adminHome')}
   `;
@@ -1210,38 +1155,7 @@ function parseTimeToMinutes(timeStr){
   return parts[0]*60 + parts[1];
 }
 
-function approvedLeaveDatesForMonth(staffId, year, month){
-  const dates = [];
-  const seen = new Set();
-  state.leaves
-    .filter(l=>l.staffId===staffId && l.status==='approved' && l.fromDate)
-    .forEach(l=>{
-      const start = new Date(l.fromDate + 'T00:00:00');
-      const end = new Date((l.toDate || l.fromDate) + 'T00:00:00');
-      if (isNaN(start) || isNaN(end)) return;
-      for (let d = new Date(start); d <= end; d.setDate(d.getDate()+1)){
-        if (d.getFullYear() !== year || d.getMonth() !== month) continue;
-        if (d.getDay() === 0) continue;
-        const key = toDateKey(d);
-        if (!seen.has(key)){
-          seen.add(key);
-          dates.push(key);
-        }
-      }
-    });
-  dates.sort();
-  return dates;
-}
-
-function leavePayMapForMonth(staff, year, month){
-  const map = {};
-  approvedLeaveDatesForMonth(staff.id, year, month).forEach((dateKey, index)=>{
-    map[dateKey] = index < 3 ? 'paidLeave' : 'unpaidLeave';
-  });
-  return map;
-}
-
-function getDayStatus(staff, dateObj, staffAttendance, leavePayByDate){
+function getDayStatus(staff, dateObj, staffAttendance){
   const dayStr = dateObj.toDateString();
   const todayStr = new Date().toDateString();
   if (dateObj > new Date() && dayStr !== todayStr) return { status:'future' };
@@ -1254,8 +1168,6 @@ function getDayStatus(staff, dateObj, staffAttendance, leavePayByDate){
   const grace = (staff.graceMinutes!=null && staff.graceMinutes!=='') ? Number(staff.graceMinutes) : 30;
 
   if (!inRec){
-    const leaveStatus = leavePayByDate ? leavePayByDate[toDateKey(dateObj)] : null;
-    if (leaveStatus) return { status: leaveStatus, inTime:null, outTime:null };
     if (dayStr === todayStr){
       const now = new Date();
       const nowMin = now.getHours()*60 + now.getMinutes();
@@ -1271,21 +1183,25 @@ function getDayStatus(staff, dateObj, staffAttendance, leavePayByDate){
 }
 
 function dailyRate(staff){ return (Number(staff.monthlySalary)||0) / 26; }
-function payForStatus(staff, status){
+function payForStatus(staff, status, leavePaid){
   if (status==='present') return dailyRate(staff);
   if (status==='half') return dailyRate(staff)/2;
-  if (status==='paidLeave') return dailyRate(staff);
+  if (status==='leave') return leavePaid ? dailyRate(staff) : 0;
   return 0; // holiday, absent, pending, future = unpaid
 }
-function statusLabel(status){
-  if (status==='paidLeave') return 'Paid Leave';
-  if (status==='unpaidLeave') return 'Unpaid Leave';
+function statusLabel(status, leavePaid){
+  if (status==='leave') return leavePaid ? 'Paid Leave' : 'Unpaid Leave';
   return { present:'Present', half:'Half Day', absent:'Absent', pending:'Pending', future:'—', holiday:'Sunday (Unpaid)' }[status] || status;
 }
-function statusBadgeClass(status){
-  if (status==='paidLeave') return 'badge-in';
-  if (status==='unpaidLeave') return 'badge-out';
+function statusBadgeClass(status, leavePaid){
+  if (status==='leave') return leavePaid ? 'badge-in' : 'badge-out';
   return { present:'badge-in', half:'badge-half', absent:'badge-out', pending:'badge-pending', future:'badge-pending', holiday:'badge-holiday' }[status] || '';
+}
+function isApprovedLeaveDay(staffId, dateObj){
+  return state.leaves.some(l=>
+    l.staffId===staffId && l.status==='approved' &&
+    new Date(l.fromDate + 'T00:00:00') <= dateObj && dateObj <= new Date((l.toDate||l.fromDate) + 'T23:59:59')
+  );
 }
 function fmtTime(ts){
   if (!ts) return '—';
@@ -1320,13 +1236,23 @@ function buildMonthRows(staff, year, month, staffAttendance){
   const daysCount = new Date(year, month+1, 0).getDate();
   const today = new Date();
   const rows = [];
-  const leavePayByDate = leavePayMapForMonth(staff, year, month);
   for (let d=1; d<=daysCount; d++){
     const dateObj = new Date(year, month, d);
     if (dateObj > today && dateObj.toDateString() !== today.toDateString()) break;
-    const { status, inTime, outTime } = getDayStatus(staff, dateObj, staffAttendance, leavePayByDate);
-    rows.push({ dateObj, status, inTime, outTime, pay: payForStatus(staff, status) });
+    let { status, inTime, outTime } = getDayStatus(staff, dateObj, staffAttendance);
+    if (status !== 'holiday' && status !== 'future' && isApprovedLeaveDay(staff.id, dateObj)){
+      status = 'leave'; inTime = null; outTime = null;
+    }
+    rows.push({ dateObj, status, inTime, outTime, leavePaid:false, pay:0 });
   }
+  let leaveCount = 0;
+  rows.forEach(r=>{
+    if (r.status==='leave'){
+      leaveCount++;
+      r.leavePaid = leaveCount <= 3;
+    }
+    r.pay = payForStatus(staff, r.status, r.leavePaid);
+  });
   return rows;
 }
 
@@ -1388,10 +1314,10 @@ function renderSalaryBody(staff, staffAttendance){
   const rows = buildMonthRows(staff, state.salary.year, state.salary.month, staffAttendance);
   const presentDays = rows.filter(r=>r.status==='present').length;
   const halfDays = rows.filter(r=>r.status==='half').length;
-  const paidLeaveDays = rows.filter(r=>r.status==='paidLeave').length;
-  const unpaidLeaveDays = rows.filter(r=>r.status==='unpaidLeave').length;
   const absentDays = rows.filter(r=>r.status==='absent').length;
   const holidayDays = rows.filter(r=>r.status==='holiday').length;
+  const paidLeaveDays = rows.filter(r=>r.status==='leave' && r.leavePaid).length;
+  const unpaidLeaveDays = rows.filter(r=>r.status==='leave' && !r.leavePaid).length;
   const totalPay = rows.reduce((sum,r)=>sum+r.pay, 0);
 
   return `
@@ -1403,10 +1329,10 @@ function renderSalaryBody(staff, staffAttendance){
     <div class="stat-row">
       <div class="stat"><div class="num">${paidLeaveDays}</div><div class="lbl">Paid Leave</div></div>
       <div class="stat"><div class="num">${unpaidLeaveDays}</div><div class="lbl">Unpaid Leave</div></div>
-      <div class="stat"><div class="num">${holidayDays}</div><div class="lbl">Sunday Holidays (Unpaid)</div></div>
+      <div class="stat"><div class="num">${holidayDays}</div><div class="lbl">Sun. Holiday</div></div>
     </div>
     <div class="card" style="text-align:center;">
-      <div class="staff-sub">Earned this month (₹${(Number(staff.monthlySalary)||0).toLocaleString('en-IN')} / month)</div>
+      <div class="staff-sub">Earned this month (₹${(Number(staff.monthlySalary)||0).toLocaleString('en-IN')} / month) · 3 paid leaves/month</div>
       <div style="font-family:'Sora',sans-serif; font-weight:800; font-size:26px; color:var(--indigo); margin-top:4px;">₹${totalPay.toLocaleString('en-IN', {maximumFractionDigits:0})}</div>
     </div>
     <div class="card">
@@ -1418,7 +1344,7 @@ function renderSalaryBody(staff, staffAttendance){
               <div class="staff-sub mono">${r.inTime ? 'In ' + fmtTime(r.inTime) : '—'}${r.outTime ? ' · Out ' + fmtTime(r.outTime) : ''}</div>
             </div>
             <div class="att-right">
-              <span class="badge ${statusBadgeClass(r.status)}">${statusLabel(r.status)}</span>
+              <span class="badge ${statusBadgeClass(r.status, r.leavePaid)}">${statusLabel(r.status, r.leavePaid)}</span>
               <span class="staff-sub mono">₹${r.pay.toLocaleString('en-IN',{maximumFractionDigits:0})}</span>
             </div>
           </div>
@@ -1611,7 +1537,6 @@ function renderAddManualAttendance(app){
   const daysCount = new Date(year, month+1, 0).getDate();
   const monthName = new Date(year, month).toLocaleDateString('en-IN',{month:'long', year:'numeric'});
   const staffAttendance = staff ? state.attendance.filter(a=>a.staffId===staff.id) : [];
-  const leavePayByDate = staff ? leavePayMapForMonth(staff, year, month) : {};
 
   let cells = '';
   for (let i=0;i<firstDay;i++) cells += `<div></div>`;
@@ -1620,13 +1545,13 @@ function renderAddManualAttendance(app){
     const dateStr = toDateKey(dateObj);
     let dotColor = 'transparent';
     if (staff){
-      const st = getDayStatus(staff, dateObj, staffAttendance, leavePayByDate).status;
+      let st = getDayStatus(staff, dateObj, staffAttendance).status;
+      if (st !== 'holiday' && st !== 'future' && isApprovedLeaveDay(staff.id, dateObj)) st = 'leave';
       if (st==='present') dotColor = 'var(--success)';
       else if (st==='half') dotColor = 'var(--marigold)';
-      else if (st==='paidLeave') dotColor = 'var(--success)';
-      else if (st==='unpaidLeave') dotColor = 'var(--danger)';
       else if (st==='absent') dotColor = 'var(--danger)';
       else if (st==='holiday') dotColor = '#2E6FBF';
+      else if (st==='leave') dotColor = '#8B5CF6';
     }
     const isSelected = state.manualCal.selectedDate === dateStr;
     cells += `
@@ -1661,7 +1586,7 @@ function renderAddManualAttendance(app){
         <div style="display:grid; grid-template-columns:repeat(7,1fr); gap:2px;">
           ${cells}
         </div>
-        <div class="staff-sub" style="margin-top:10px;">🟢 Present · 🟠 Half Day · 🔴 Absent · 🔵 Sunday (Unpaid)</div>
+        <div class="staff-sub" style="margin-top:10px;">🟢 Present · 🟠 Half Day · 🔴 Absent · 🔵 Sunday (Unpaid) · 🟣 Leave</div>
       </div>
 
       ${state.manualCal.selectedDate ? `
@@ -1802,6 +1727,12 @@ function renderStaffHome(app){
         ${tileHTML('📣','#FDE7E7','Complaints',"go('complaintForm')")}
         ${tileHTML('🎁','#FFF3D6','Rewards',"go('rewards')")}
       </div>
+      ${state.apps.length ? `
+        <div class="section-title">Company Apps</div>
+        <div class="tile-grid">
+          ${state.apps.map(a=>tileHTML(a.icon||'🔗','#E9E6FF', a.name, `window.open('${a.url}','_blank')`)).join('')}
+        </div>
+      ` : ''}
     </div>
     ${bottomNav('staffHome')}
   `;
@@ -2045,6 +1976,57 @@ function renderAdminComplaints(app){
     </div>
     ${bottomNav('adminHome')}
   `;
+}
+
+function renderAdminApps(app){
+  app.innerHTML = `
+    ${topbar('Tools','Manage Apps','Add a link — everyone in your business will see it as a tile on their home screen')}
+    <div class="screen">
+      <div class="card">
+        <label>App name</label>
+        <input id="appName" placeholder="e.g. App Hub, DJ Platform, Billing System">
+        <label>Link (URL)</label>
+        <input id="appUrl" type="url" placeholder="https://...">
+        <label>Icon (optional emoji)</label>
+        <input id="appIcon" placeholder="🔗" maxlength="4">
+        ${state.error ? `<div class="error-text">${state.error}</div>` : ''}
+        <button class="btn btn-marigold" id="addAppBtn" onclick="doAddApp()">Add App</button>
+      </div>
+      <div class="card">
+        ${state.apps.length===0 ? `<div class="empty">No apps added yet.</div>` :
+          state.apps.map(a=>`
+            <div class="attendance-item">
+              <div class="att-left">
+                <div class="staff-name" style="font-size:14px;">${a.icon||'🔗'} ${a.name}</div>
+                <div class="staff-sub">${a.url}</div>
+              </div>
+              <button class="link" style="color:var(--danger);" onclick="doDeleteApp('${a.id}')">Remove</button>
+            </div>
+          `).join('')}
+      </div>
+    </div>
+    ${bottomNav('adminHome')}
+  `;
+}
+async function doAddApp(){
+  const name = document.getElementById('appName').value.trim();
+  let url = document.getElementById('appUrl').value.trim();
+  const icon = document.getElementById('appIcon').value.trim();
+  if (!name || !url){ state.error='Name and link are required.'; render(); return; }
+  if (!/^https?:\/\//i.test(url)) url = 'https://' + url;
+  const btn = document.getElementById('addAppBtn');
+  btn.disabled = true; btn.textContent='Adding...';
+  try{
+    await addApp(state.session.businessId, { name, url, icon });
+    toast('App added — everyone will see it on their home screen');
+    go('adminApps');
+  }catch(e){
+    state.error = e.message; render();
+  }
+}
+async function doDeleteApp(appId){
+  await deleteApp(state.session.businessId, appId);
+  toast('App removed');
 }
 
 function renderScanning(app){
