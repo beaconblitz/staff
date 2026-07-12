@@ -3,6 +3,17 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+
+<!-- iOS "Add to Home Screen" icon + behavior -->
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="BB Staff">
+<meta name="theme-color" content="#3D2E8C">
+
+<!-- General favicon + PWA manifest (Android/Chrome) -->
+<link rel="icon" href="icon-192.png">
+<link rel="manifest" href="manifest.json">
 <title>Beaconblitz Staff — Attendance</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Sora:wght@500;600;700;800&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@500;600&display=swap" rel="stylesheet">
@@ -208,6 +219,9 @@
     padding:12px 8px 16px;
     border-radius:28px 28px 0 0;
     box-shadow: 0 -6px 16px var(--clay-dark);
+    position:sticky;
+    bottom:0;
+    z-index:50;
   }
   .bottom-nav button{
     flex:1; background:none; border:none; display:flex; flex-direction:column; align-items:center; gap:4px;
@@ -648,6 +662,7 @@ async function bootstrap(){
       listenMeetings(existing.businessId);
       listenLeaves(existing.businessId, existing.staffId);
       listenApps(existing.businessId);
+      startLiveLocationTracking();
     }
   }
 
@@ -854,6 +869,7 @@ async function doLogin(){
       listenMeetings(session.businessId);
       listenLeaves(session.businessId, session.staffId);
       listenApps(session.businessId);
+      startLiveLocationTracking();
       if (state.pendingAttendBiz && state.pendingAttendBiz === session.businessId){
         const biz = state.pendingAttendBiz;
         state.pendingAttendBiz = null;
@@ -1000,6 +1016,7 @@ function doLogout(){
   if (state.attendanceListenerRef) state.attendanceListenerRef.off();
   if (state.liveLocationsListenerRef) state.liveLocationsListenerRef.off();
   clearShiftTimers();
+  stopLiveLocationTracking();
   state.session = null;
   clearSession();
   go('landing');
@@ -1714,11 +1731,7 @@ let liveLocationInterval = null;
 function clearShiftTimers(){
   if (autoCheckoutTimeout) clearTimeout(autoCheckoutTimeout);
   if (shiftCountdownInterval) clearInterval(shiftCountdownInterval);
-  if (liveLocationInterval) clearInterval(liveLocationInterval);
-  autoCheckoutTimeout = null; shiftCountdownInterval = null; liveLocationInterval = null;
-  if (state.session && state.session.role==='staff'){
-    clearLiveLocation(state.session.businessId, state.session.staffId).catch(()=>{});
-  }
+  autoCheckoutTimeout = null; shiftCountdownInterval = null;
 }
 
 function pushLiveLocation(){
@@ -1726,6 +1739,20 @@ function pushLiveLocation(){
   navigator.geolocation.getCurrentPosition((pos)=>{
     updateLiveLocation(state.session.businessId, state.session.staffId, state.session.name, pos.coords.latitude, pos.coords.longitude).catch(()=>{});
   }, ()=>{}, { enableHighAccuracy:true, timeout:10000 });
+}
+
+function startLiveLocationTracking(){
+  if (liveLocationInterval) return; // already running
+  pushLiveLocation();
+  liveLocationInterval = setInterval(pushLiveLocation, LIVE_LOCATION_INTERVAL_MS);
+}
+
+function stopLiveLocationTracking(){
+  if (liveLocationInterval) clearInterval(liveLocationInterval);
+  liveLocationInterval = null;
+  if (state.session && state.session.role==='staff'){
+    clearLiveLocation(state.session.businessId, state.session.staffId).catch(()=>{});
+  }
 }
 
 function getTodayInOut(staffAttendance){
@@ -1742,8 +1769,6 @@ function setupShiftTimer(inTs){
   if (remaining <= 0){ doAutoCheckout(); return; }
   autoCheckoutTimeout = setTimeout(doAutoCheckout, remaining);
   shiftCountdownInterval = setInterval(()=>{ if (state.screen==='staffHome') render(); }, 60000);
-  pushLiveLocation();
-  liveLocationInterval = setInterval(pushLiveLocation, LIVE_LOCATION_INTERVAL_MS);
 }
 
 async function doAutoCheckout(){
@@ -2117,17 +2142,17 @@ function timeAgo(ts){
 }
 
 function renderAdminLiveMap(app){
-  const onShiftStaffIds = new Set(state.liveLocations.map(l=>l.staffId));
-  const offShiftStaff = state.staffList.filter(s=>!onShiftStaffIds.has(s.id));
+  const liveStaffIds = new Set(state.liveLocations.map(l=>l.staffId));
+  const offlineStaff = state.staffList.filter(s=>!liveStaffIds.has(s.id));
   app.innerHTML = `
-    ${topbar('Team','Live Location','Updates every 5 min while staff are checked in')}
+    ${topbar('Team','Live Location','Updates every 5 min while the staff app is open')}
     <div class="screen">
       <div class="card">
-        <div class="staff-sub">Location only tracks while a staff member is on an active shift (checked in, not checked out) — it stops the moment they check out.</div>
+        <div class="staff-sub">Location tracks continuously whenever a staff member has the app open on their phone — not tied to check-in/check-out. It stops if they close the app or log out.</div>
       </div>
       <div class="card">
-        <h3 style="margin:0 0 10px; font-size:15px;">Currently On Shift</h3>
-        ${state.liveLocations.length===0 ? `<div class="list-empty-note">No staff currently checked in.</div>` :
+        <h3 style="margin:0 0 10px; font-size:15px;">Live Now</h3>
+        ${state.liveLocations.length===0 ? `<div class="list-empty-note">No staff currently sharing location.</div>` :
           state.liveLocations.map(l=>`
             <div class="attendance-item">
               <div class="att-left">
@@ -2138,10 +2163,10 @@ function renderAdminLiveMap(app){
             </div>
           `).join('')}
       </div>
-      ${offShiftStaff.length ? `
+      ${offlineStaff.length ? `
         <div class="card">
-          <h3 style="margin:0 0 10px; font-size:15px;">Not Checked In</h3>
-          ${offShiftStaff.map(s=>`
+          <h3 style="margin:0 0 10px; font-size:15px;">Offline</h3>
+          ${offlineStaff.map(s=>`
             <div class="attendance-item">
               <div class="att-left"><div class="staff-name" style="font-size:14px;">${s.name}</div></div>
               <span class="staff-sub">No location</span>
