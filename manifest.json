@@ -1,7 +1,7 @@
 {
   "name": "Beaconblitz Staff",
   "short_name": "BB Staff",
-  "start_url": "./beaconblitz-staff.html",
+  "start_url": "https://beaconblitz.github.io/staff/",
   "display": "standalone",
   "background_color": "#EAE7F5",
   "theme_color": "#6B3FA0",
