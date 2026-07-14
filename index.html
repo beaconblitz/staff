@@ -283,6 +283,44 @@
   }
   .config-warning code{background:#fff; padding:2px 6px; border-radius:6px;}
   .spinner-box{text-align:center; padding:40px 20px; color:var(--muted);}
+
+  .chat-list-item{
+    display:flex; align-items:center; justify-content:space-between;
+    padding:14px 16px; border-radius:18px; margin-bottom:10px; cursor:pointer;
+    background:var(--clay-bg); box-shadow: 4px 4px 10px var(--clay-dark), -4px -4px 10px var(--clay-light);
+  }
+  .chat-thread-wrap{
+    display:flex; flex-direction:column; flex:1; min-height:0;
+  }
+  .chat-messages{
+    flex:1; overflow-y:auto; padding:16px 4px; display:flex; flex-direction:column; gap:10px;
+  }
+  .chat-bubble-row{ display:flex; }
+  .chat-bubble-row.own{ justify-content:flex-end; }
+  .chat-bubble{
+    max-width:75%; padding:11px 15px; border-radius:18px; font-size:14px; line-height:1.4; position:relative;
+    box-shadow: 3px 3px 8px var(--clay-dark), -3px -3px 8px var(--clay-light);
+  }
+  .chat-bubble.own{ background:linear-gradient(135deg,#5B4BC4,#3D2E8C); color:#fff; border-bottom-right-radius:4px; }
+  .chat-bubble.other{ background:var(--clay-bg); color:var(--ink); border-bottom-left-radius:4px; }
+  .chat-bubble .chat-time{ font-size:10px; opacity:0.7; margin-top:4px; display:block; }
+  .chat-bubble .chat-del{
+    position:absolute; top:-8px; right:-8px; background:var(--danger); color:#fff; border:none;
+    width:20px; height:20px; border-radius:50%; font-size:10px; cursor:pointer; display:none;
+    align-items:center; justify-content:center;
+  }
+  .chat-bubble-row:hover .chat-del{ display:flex; }
+  .chat-input-bar{
+    display:flex; gap:8px; padding:10px 4px 4px; align-items:flex-end;
+  }
+  .chat-input-bar textarea{
+    flex:1; margin-bottom:0; resize:none; max-height:100px;
+  }
+  .chat-send-btn{
+    width:46px; height:46px; border-radius:16px; border:none; flex-shrink:0;
+    background:linear-gradient(135deg,#FFA35C,#C2417A); color:#fff; font-size:18px; cursor:pointer;
+    box-shadow: 4px 4px 10px rgba(194,65,122,0.35);
+  }
 </style>
 
 </head>
@@ -338,6 +376,12 @@ const state = {
   appsListenerRef: null,
   liveLocationsListenerRef: null,
   locationRequestListenerRef: null,
+  chatListenerRef: null,
+  allChatsListenerRef: null,
+  chatMessages: [],
+  chatSummaries: {},
+  chatWithStaffId: null,
+  chatWithStaffName: null,
   error: '',
   lastPunchType: 'in',
   pendingAttendBiz: null,
@@ -658,6 +702,74 @@ function listenLocationRequests(businessId, staffId){
   });
 }
 
+/* ---- Chat (admin <-> one staff member per thread) ---- */
+function listenChatMessages(businessId, staffId){
+  if (state.chatListenerRef) state.chatListenerRef.off();
+  const ref = db.ref('businesses/' + businessId + '/chats/' + staffId + '/messages');
+  state.chatListenerRef = ref;
+  let firstLoad = true;
+  ref.on('value', snap=>{
+    const val = snap.val() || {};
+    const list = Object.keys(val).map(id=>({ id, ...val[id] })).sort((a,b)=>(a.ts||0)-(b.ts||0));
+    const prevCount = state.chatMessages.length;
+    state.chatMessages = list;
+    if (!firstLoad && list.length > prevCount){
+      const last = list[list.length-1];
+      const isOwnRole = state.session && ((state.session.role==='admin' && last.sender==='admin') || (state.session.role==='staff' && last.sender==='staff'));
+      if (!isOwnRole) notifyNewMessage(last);
+    }
+    firstLoad = false;
+    if (state.screen==='chatThread') { render(); scrollChatToBottom(); }
+    if (state.screen==='adminChatList') render();
+  });
+}
+async function sendChatMessage(businessId, staffId, sender, senderName, text){
+  const ref = db.ref('businesses/' + businessId + '/chats/' + staffId + '/messages').push();
+  await ref.set({ sender, senderName, text, ts: firebase.database.ServerValue.TIMESTAMP });
+}
+async function deleteChatMessage(businessId, staffId, messageId){
+  await db.ref('businesses/' + businessId + '/chats/' + staffId + '/messages/' + messageId).remove();
+}
+async function clearChatMessages(businessId, staffId){
+  await db.ref('businesses/' + businessId + '/chats/' + staffId + '/messages').remove();
+}
+function listenAllChatsLastMessage(businessId){
+  // For admin's chat list: track last message + unread hint per staff
+  if (state.allChatsListenerRef) state.allChatsListenerRef.off();
+  const ref = db.ref('businesses/' + businessId + '/chats');
+  state.allChatsListenerRef = ref;
+  ref.on('value', snap=>{
+    const val = snap.val() || {};
+    const summary = {};
+    Object.keys(val).forEach(staffId=>{
+      const msgs = Object.values(val[staffId].messages || {});
+      msgs.sort((a,b)=>(a.ts||0)-(b.ts||0));
+      summary[staffId] = msgs[msgs.length-1] || null;
+    });
+    state.chatSummaries = summary;
+    if (state.screen==='adminChatList') render();
+  });
+}
+
+function requestNotificationPermission(){
+  if ('Notification' in window && Notification.permission === 'default'){
+    Notification.requestPermission().catch(()=>{});
+  }
+}
+function notifyNewMessage(msg){
+  if (!('Notification' in window) || Notification.permission !== 'granted') return;
+  try{
+    const n = new Notification(msg.senderName + ' sent a message', { body: msg.text, icon: 'icon-192.png' });
+    n.onclick = ()=>{ window.focus(); n.close(); };
+  }catch(e){}
+}
+function scrollChatToBottom(){
+  setTimeout(()=>{
+    const el = document.getElementById('chatMessagesEl');
+    if (el) el.scrollTop = el.scrollHeight;
+  }, 30);
+}
+
 /* ---------------------------------------------------------
    BOOTSTRAP — restore session + handle QR deep-link (?attend=businessId)
    --------------------------------------------------------- */
@@ -678,6 +790,8 @@ async function bootstrap(){
       listenComplaints(existing.businessId, null);
       listenApps(existing.businessId);
       listenLiveLocations(existing.businessId);
+      listenAllChatsLastMessage(existing.businessId);
+      requestNotificationPermission();
     } else {
       listenAttendance(existing.businessId, existing.staffId);
       listenMeetings(existing.businessId);
@@ -685,6 +799,7 @@ async function bootstrap(){
       listenApps(existing.businessId);
       startLiveLocationTracking();
       listenLocationRequests(existing.businessId, existing.staffId);
+      requestNotificationPermission();
     }
   }
 
@@ -793,6 +908,8 @@ function render(){
     adminComplaints: renderAdminComplaints,
     adminApps: renderAdminApps,
     adminLiveMap: renderAdminLiveMap,
+    adminChatList: renderAdminChatList,
+    chatThread: renderChatThread,
     staffHome: renderStaffHome,
     scanning: renderScanning,
     punching: renderPunching,
@@ -885,6 +1002,8 @@ async function doLogin(){
       listenComplaints(session.businessId, null);
       listenApps(session.businessId);
       listenLiveLocations(session.businessId);
+      listenAllChatsLastMessage(session.businessId);
+      requestNotificationPermission();
       go('adminHome');
     } else {
       listenAttendance(session.businessId, session.staffId);
@@ -893,6 +1012,7 @@ async function doLogin(){
       listenApps(session.businessId);
       startLiveLocationTracking();
       listenLocationRequests(session.businessId, session.staffId);
+      requestNotificationPermission();
       if (state.pendingAttendBiz && state.pendingAttendBiz === session.businessId){
         const biz = state.pendingAttendBiz;
         state.pendingAttendBiz = null;
@@ -962,6 +1082,8 @@ async function doRegister(){
     listenComplaints(businessId, null);
     listenApps(businessId);
     listenLiveLocations(businessId);
+    listenAllChatsLastMessage(businessId);
+    requestNotificationPermission();
     toast('Business created 🎉');
     go('adminHome');
   }catch(e){
@@ -1001,6 +1123,7 @@ function renderAdminHome(app){
         ${tileHTML('📣','#FDE7E7','Complaints',"go('adminComplaints')")}
         ${tileHTML('🧩','#E3F0FF','Manage Apps',"go('adminApps')")}
         ${tileHTML('📍','#FDE3EE','Live Location',"go('adminLiveMap')")}
+        ${tileHTML('💬','#E3F0FF','Chat',"go('adminChatList')")}
       </div>
       ${state.apps.length ? `
         <div class="section-title">Your Apps</div>
@@ -1039,6 +1162,8 @@ function doLogout(){
   if (state.attendanceListenerRef) state.attendanceListenerRef.off();
   if (state.liveLocationsListenerRef) state.liveLocationsListenerRef.off();
   if (state.locationRequestListenerRef) state.locationRequestListenerRef.off();
+  if (state.chatListenerRef) state.chatListenerRef.off();
+  if (state.allChatsListenerRef) state.allChatsListenerRef.off();
   clearShiftTimers();
   stopLiveLocationTracking();
   state.session = null;
@@ -1852,6 +1977,7 @@ function renderStaffHome(app){
         ${tileHTML('✅','#E3F0FF','Todo',"window.open('https://beaconblitz.github.io/bb-to-do/','_blank')")}
         ${tileHTML('📣','#FDE7E7','Complaints',"go('complaintForm')")}
         ${tileHTML('🎁','#FFF3D6','Rewards',"go('rewards')")}
+        ${tileHTML('💬','#E3F0FF','Chat with Admin',"openStaffChat()")}
       </div>
       ${state.apps.length ? `
         <div class="section-title">Company Apps</div>
@@ -2241,6 +2367,117 @@ async function doRequestLocation(staffId){
 async function doRefreshAllLocations(){
   await Promise.all(state.liveLocations.map(l=>requestLocationNow(state.session.businessId, l.staffId)));
   toast('Refreshing all staff locations...');
+}
+
+/* ---------------- Chat ---------------- */
+function openAdminChat(staffId, staffName){
+  state.chatWithStaffId = staffId;
+  state.chatWithStaffName = staffName;
+  state.chatMessages = [];
+  listenChatMessages(state.session.businessId, staffId);
+  go('chatThread');
+}
+function openStaffChat(){
+  state.chatWithStaffId = state.session.staffId;
+  state.chatWithStaffName = 'Admin (' + state.session.businessName + ')';
+  state.chatMessages = [];
+  listenChatMessages(state.session.businessId, state.session.staffId);
+  go('chatThread');
+}
+
+function renderAdminChatList(app){
+  app.innerHTML = `
+    ${topbar('Team','Chat','Message any staff member directly')}
+    <div class="screen">
+      <div class="card">
+        ${state.staffList.length===0 ? `<div class="empty">No staff added yet.</div>` :
+          state.staffList.map(s=>{
+            const last = state.chatSummaries[s.id];
+            return `
+              <div class="chat-list-item" onclick="openAdminChat('${s.id}','${s.name.replace(/'/g,"\\'")}')">
+                <div class="row-flex">
+                  <div class="avatar">${(s.name||'?')[0].toUpperCase()}</div>
+                  <div>
+                    <div class="staff-name">${s.name}</div>
+                    <div class="staff-sub">${last ? (last.text.length>30 ? last.text.slice(0,30)+'…' : last.text) : 'No messages yet'}</div>
+                  </div>
+                </div>
+                <span class="staff-sub">${last ? fmtTime(last.ts) : ''}</span>
+              </div>
+            `;
+          }).join('')}
+      </div>
+    </div>
+    ${bottomNav('adminHome')}
+  `;
+}
+
+function renderChatThread(app){
+  const isAdmin = state.session.role === 'admin';
+  app.innerHTML = `
+    ${topbar('Chat', state.chatWithStaffName || '', '')}
+    <div class="screen" style="flex:1; min-height:0; display:flex; flex-direction:column;">
+      <div style="display:flex; justify-content:space-between; align-items:center;">
+        <button class="btn-ghost" style="width:auto; padding:6px 0;" onclick="closeChatThread()">← Back</button>
+        ${state.chatMessages.length ? `<button class="link" style="color:var(--danger);" onclick="doClearChat()">🗑 Clear Chat</button>` : ''}
+      </div>
+      <div class="chat-thread-wrap" style="flex:1; min-height:0;">
+        <div class="chat-messages" id="chatMessagesEl">
+          ${state.chatMessages.length===0 ? `<div class="list-empty-note">No messages yet — say hi 👋</div>` :
+            state.chatMessages.map(m=>{
+              const own = (isAdmin && m.sender==='admin') || (!isAdmin && m.sender==='staff');
+              return `
+                <div class="chat-bubble-row ${own?'own':''}">
+                  <div class="chat-bubble ${own?'own':'other'}">
+                    ${m.text.replace(/</g,'&lt;')}
+                    <span class="chat-time">${fmtTime(m.ts)}</span>
+                    <button class="chat-del" onclick="doDeleteChatMessage('${m.id}')" title="Delete">✕</button>
+                  </div>
+                </div>
+              `;
+            }).join('')}
+        </div>
+        <div class="chat-input-bar">
+          <textarea id="chatInput" rows="1" placeholder="Type a message..." onkeydown="if(event.key==='Enter' && !event.shiftKey){event.preventDefault(); doSendChatMessage();}"></textarea>
+          <button class="chat-send-btn" onclick="doSendChatMessage()">➤</button>
+        </div>
+      </div>
+    </div>
+  `;
+  scrollChatToBottom();
+}
+
+function closeChatThread(){
+  if (state.chatListenerRef) state.chatListenerRef.off();
+  state.chatListenerRef = null;
+  state.chatWithStaffId = null;
+  go(state.session.role==='admin' ? 'adminChatList' : 'staffHome');
+}
+
+async function doSendChatMessage(){
+  const input = document.getElementById('chatInput');
+  const text = input.value.trim();
+  if (!text) return;
+  input.value = '';
+  const isAdmin = state.session.role === 'admin';
+  await sendChatMessage(
+    state.session.businessId,
+    state.chatWithStaffId,
+    isAdmin ? 'admin' : 'staff',
+    isAdmin ? state.session.name + ' (Admin)' : state.session.name,
+    text
+  );
+}
+
+async function doDeleteChatMessage(messageId){
+  await deleteChatMessage(state.session.businessId, state.chatWithStaffId, messageId);
+}
+
+async function doClearChat(){
+  const confirmed = window.confirm('Delete all messages in this chat? This frees up storage and cannot be undone.');
+  if (!confirmed) return;
+  await clearChatMessages(state.session.businessId, state.chatWithStaffId);
+  toast('Chat cleared');
 }
 
 function renderScanning(app){
