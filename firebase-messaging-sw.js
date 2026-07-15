@@ -19,11 +19,12 @@ messaging.onBackgroundMessage((payload) => {
     body: notification.body || 'You have a new update.',
     icon: notification.icon || 'icon-192.png',
     badge: 'icon-192.png',
-    data: payload.data || {}
+    data: { ...(payload.data || {}), url: 'https://beaconblitz.github.io/staff/' }
   });
 });
 
 self.addEventListener('notificationclick', (event) => {
   event.notification.close();
-  event.waitUntil(clients.openWindow('/staff/'));
+  const url = (event.notification.data && event.notification.data.url) || 'https://beaconblitz.github.io/staff/';
+  event.waitUntil(clients.openWindow(url));
 });
