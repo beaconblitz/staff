@@ -753,9 +753,7 @@ function listenAllChatsLastMessage(businessId){
 }
 
 function requestNotificationPermission(){
-  if ('Notification' in window && Notification.permission === 'default'){
-    Notification.requestPermission().catch(()=>{});
-  }
+  // Permission is requested inside setupPushNotifications after support checks.
 }
 function notifyNewMessage(msg){
   if (!('Notification' in window) || Notification.permission !== 'granted') return;
@@ -780,21 +778,30 @@ function scrollChatToBottom(){
    ---------------------------------------------------------- */
 const FCM_VAPID_KEY = "BF7MtkAA6pPFjO1ViyaKXJRYiF6MB_YAkGLPzNXW08G3MBadcerV10WuPtQDJYKVPW2sMBclsOCce7i5G32ruv4";
 
+function getPushSupportIssue(){
+  const ua = navigator.userAgent || '';
+  const isIOS = /iPad|iPhone|iPod/.test(ua) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+  const isStandalone = window.navigator.standalone === true || window.matchMedia('(display-mode: standalone)').matches;
+  if (location.protocol === 'file:') return 'Open the hosted https app, not the downloaded file.';
+  if (!('Notification' in window)) return 'Notifications are not available in this browser.';
+  if (!('serviceWorker' in navigator)) return 'Service worker is not supported in this browser.';
+  if (isIOS && !isStandalone) return 'On iPhone, add BB Staff to Home Screen and open that app icon.';
+  if (!('PushManager' in window)){
+    return isIOS
+      ? 'This iPhone/iOS version does not support web push. Update to iOS 16.4 or newer.'
+      : 'This browser does not support web push. Use Chrome/Edge or the installed app.';
+  }
+  return '';
+}
+
 async function setupPushNotifications(){
   if (FCM_VAPID_KEY === "YOUR_VAPID_KEY"){
     toast('Push notifications are not configured: missing VAPID key.');
     return false;
   }
-  if (location.protocol === 'file:'){
-    toast('Push notifications need the hosted https app, not the downloaded file.');
-    return false;
-  }
-  if (!('Notification' in window)){
-    toast('This browser does not support notifications.');
-    return false;
-  }
-  if (!('serviceWorker' in navigator) || !('PushManager' in window)){
-    toast('This browser does not support web push.');
+  const supportIssue = getPushSupportIssue();
+  if (supportIssue){
+    toast(supportIssue);
     return false;
   }
   try{
@@ -809,7 +816,7 @@ async function setupPushNotifications(){
     const messaging = firebase.messaging();
     const token = await messaging.getToken({ vapidKey: FCM_VAPID_KEY, serviceWorkerRegistration: registration });
     if (token && state.session){
-      const tokenKey = btoa(token).replace(/\\+/g, '-').replace(/\\//g, '_').replace(/=+$/g, '');
+      const tokenKey = Array.from(token).map(ch=>ch.charCodeAt(0).toString(16).padStart(2,'0')).join('').slice(0, 700);
       const tokenData = {
         token,
         ua: navigator.userAgent || '',
