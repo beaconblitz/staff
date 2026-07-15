@@ -762,6 +762,22 @@ function notifyNewMessage(msg){
     n.onclick = ()=>{ window.focus(); n.close(); };
   }catch(e){}
 }
+
+function shouldShowNotificationButton(){
+  if (!state.session) return false;
+  if (!('Notification' in window)) return false;
+  return Notification.permission !== 'granted';
+}
+
+function notificationButtonHTML(){
+  if (!shouldShowNotificationButton()) return '';
+  return '<button class="btn btn-marigold" onclick="enableNotificationsFromButton()">🔔 Enable Notifications</button>';
+}
+
+async function enableNotificationsFromButton(){
+  const ok = await setupPushNotifications();
+  if (ok) render();
+}
 function scrollChatToBottom(){
   setTimeout(()=>{
     const el = document.getElementById('chatMessagesEl');
@@ -1185,6 +1201,7 @@ function renderAdminHome(app){
         <div class="stat"><div class="num">${state.staffList.length}</div><div class="lbl">Staff</div></div>
         <div class="stat"><div class="num">${todayIn.length}</div><div class="lbl">Checked in today</div></div>
       </div>
+      ${notificationButtonHTML()}
 
       <div class="qr-ticket">
         <div class="biz">${state.session.businessName}'s Attendance QR</div>
@@ -2049,6 +2066,7 @@ function renderStaffHome(app){
         ${upcomingMeetings.length ? ` · Meetings: ${upcomingMeetings.length} upcoming meeting(s)` : ''}
       </div>
       ${shiftTimerNote() ? `<div class="staff-sub" style="font-weight:600; color:var(--indigo);">${shiftTimerNote()}</div>` : ''}
+      ${notificationButtonHTML()}
       <div class="section-title">What do you want to do today?</div>
       <div class="tile-grid">
         ${tileHTML('📷','#E9E6FF','Attendance',"go('scanning')")}
