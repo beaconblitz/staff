@@ -809,12 +809,20 @@ async function setupPushNotifications(){
     const messaging = firebase.messaging();
     const token = await messaging.getToken({ vapidKey: FCM_VAPID_KEY, serviceWorkerRegistration: registration });
     if (token && state.session){
+      const tokenKey = btoa(token).replace(/\\+/g, '-').replace(/\\//g, '_').replace(/=+$/g, '');
+      const tokenData = {
+        token,
+        ua: navigator.userAgent || '',
+        updatedAt: firebase.database.ServerValue.TIMESTAMP
+      };
       if (state.session.role === 'admin'){
-        await db.ref('businesses/' + state.session.businessId + '/adminFcmToken').set(token);
+        await db.ref('businesses/' + state.session.businessId + '/adminFcmToken').set(token); // legacy single-device path
+        await db.ref('businesses/' + state.session.businessId + '/adminFcmTokens/' + tokenKey).set(tokenData);
       } else {
-        await db.ref('businesses/' + state.session.businessId + '/staff/' + state.session.staffId + '/fcmToken').set(token);
+        await db.ref('businesses/' + state.session.businessId + '/staff/' + state.session.staffId + '/fcmToken').set(token); // legacy single-device path
+        await db.ref('businesses/' + state.session.businessId + '/staff/' + state.session.staffId + '/fcmTokens/' + tokenKey).set(tokenData);
       }
-      toast('Push notifications enabled.');
+      toast('Push notifications enabled on this device.');
     } else {
       toast('Push token was not created. Try refreshing once.');
       return false;
