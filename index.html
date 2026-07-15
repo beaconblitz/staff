@@ -21,6 +21,7 @@
 <link href="https://fonts.googleapis.com/css2?family=Sora:wght@500;600;700;800&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@500;600&display=swap" rel="stylesheet">
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-messaging-compat.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
 <style>
@@ -771,6 +772,40 @@ function scrollChatToBottom(){
 }
 
 /* ---------------------------------------------------------
+   PUSH NOTIFICATIONS (Firebase Cloud Messaging)
+   Works even when the phone is locked / app is closed — unlike the
+   plain Notification API above, which only fires while a tab is open.
+   Requires: firebase-messaging-sw.js at the site root + a VAPID key
+   from Firebase Console → Project Settings → Cloud Messaging.
+   ---------------------------------------------------------- */
+const FCM_VAPID_KEY = "BF7MtkAA6pPFjO1ViyaKXJRYiF6MB_YAkGLPzNXW08G3MBadcerV10WuPtQDJYKVPW2sMBclsOCce7i5G32ruv4";
+
+async function setupPushNotifications(){
+  if (FCM_VAPID_KEY === "YOUR_VAPID_KEY") return; // not configured yet, skip silently
+  if (!('serviceWorker' in navigator) || !('PushManager' in window)) return;
+  try{
+    const registration = await navigator.serviceWorker.register('firebase-messaging-sw.js');
+    const permission = await Notification.requestPermission();
+    if (permission !== 'granted') return;
+
+    const messaging = firebase.messaging();
+    const token = await messaging.getToken({ vapidKey: FCM_VAPID_KEY, serviceWorkerRegistration: registration });
+    if (token && state.session){
+      if (state.session.role === 'admin'){
+        await db.ref('businesses/' + state.session.businessId + '/adminFcmToken').set(token);
+      } else {
+        await db.ref('businesses/' + state.session.businessId + '/staff/' + state.session.staffId + '/fcmToken').set(token);
+      }
+    }
+    // Foreground messages (app open) — show as an in-app toast instead of a duplicate system popup
+    messaging.onMessage((payload)=>{
+      const n = payload.notification || {};
+      toast((n.title || 'New message') + (n.body ? ': ' + n.body : ''));
+    });
+  }catch(e){ console.error('Push setup failed:', e); }
+}
+
+/* ---------------------------------------------------------
    BOOTSTRAP — restore session + handle QR deep-link (?attend=businessId)
    --------------------------------------------------------- */
 async function bootstrap(){
@@ -792,6 +827,7 @@ async function bootstrap(){
       listenLiveLocations(existing.businessId);
       listenAllChatsLastMessage(existing.businessId);
       requestNotificationPermission();
+      setupPushNotifications();
     } else {
       listenAttendance(existing.businessId, existing.staffId);
       listenMeetings(existing.businessId);
@@ -800,6 +836,7 @@ async function bootstrap(){
       startLiveLocationTracking();
       listenLocationRequests(existing.businessId, existing.staffId);
       requestNotificationPermission();
+      setupPushNotifications();
     }
   }
 
@@ -1004,6 +1041,7 @@ async function doLogin(){
       listenLiveLocations(session.businessId);
       listenAllChatsLastMessage(session.businessId);
       requestNotificationPermission();
+      setupPushNotifications();
       go('adminHome');
     } else {
       listenAttendance(session.businessId, session.staffId);
@@ -1013,6 +1051,7 @@ async function doLogin(){
       startLiveLocationTracking();
       listenLocationRequests(session.businessId, session.staffId);
       requestNotificationPermission();
+      setupPushNotifications();
       if (state.pendingAttendBiz && state.pendingAttendBiz === session.businessId){
         const biz = state.pendingAttendBiz;
         state.pendingAttendBiz = null;
@@ -1084,6 +1123,7 @@ async function doRegister(){
     listenLiveLocations(businessId);
     listenAllChatsLastMessage(businessId);
     requestNotificationPermission();
+      setupPushNotifications();
     toast('Business created 🎉');
     go('adminHome');
   }catch(e){
