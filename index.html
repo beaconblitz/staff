@@ -16,7 +16,7 @@
 <link rel="manifest" href="manifest.json">
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-<title>Beaconblitz Staff â€” Attendance</title>
+<title>Beaconblitz Staff - Attendance</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Sora:wght@500;600;700;800&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@500;600&display=swap" rel="stylesheet">
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
@@ -331,7 +331,7 @@
 
 <script>
 /* =========================================================
-   FIREBASE CONFIG â€” bb-staff project (Realtime Database)
+   FIREBASE CONFIG — bb-staff project (Realtime Database)
    ========================================================= */
 const firebaseConfig = {
   apiKey: "AIzaSyDsf4bzIHvtI-D9FkBY5ImYf9E7cmZc9R8",
@@ -656,7 +656,7 @@ function listenApps(businessId){
 async function addApp(businessId, data){
   const ref = db.ref('businesses/' + businessId + '/apps').push();
   await ref.set({
-    name: data.name, url: data.url, icon: data.icon || 'ðŸ”—',
+    name: data.name, url: data.url, icon: data.icon || '🔗',
     createdAt: firebase.database.ServerValue.TIMESTAMP
   });
 }
@@ -773,10 +773,10 @@ function scrollChatToBottom(){
 
 /* ---------------------------------------------------------
    PUSH NOTIFICATIONS (Firebase Cloud Messaging)
-   Works even when the phone is locked / app is closed â€” unlike the
+   Works even when the phone is locked / app is closed — unlike the
    plain Notification API above, which only fires while a tab is open.
    Requires: firebase-messaging-sw.js at the site root + a VAPID key
-   from Firebase Console â†’ Project Settings â†’ Cloud Messaging.
+   from Firebase Console → Project Settings → Cloud Messaging.
    ---------------------------------------------------------- */
 const FCM_VAPID_KEY = "BF7MtkAA6pPFjO1ViyaKXJRYiF6MB_YAkGLPzNXW08G3MBadcerV10WuPtQDJYKVPW2sMBclsOCce7i5G32ruv4";
 
@@ -832,7 +832,7 @@ async function setupPushNotifications(){
   }
 }
 /* ---------------------------------------------------------
-   BOOTSTRAP â€” restore session + handle QR deep-link (?attend=businessId)
+   BOOTSTRAP — restore session + handle QR deep-link (?attend=businessId)
    --------------------------------------------------------- */
 async function bootstrap(){
   if (!firebaseReady){ go('setup'); return; }
@@ -898,7 +898,7 @@ async function prepareConfirm(businessId, staffId, staffName, adminMobile){
   try{
     const status = await getTodayPunchStatus(businessId, staffId);
     if (status.hasIn && status.hasOut){
-      state.error = `You've already completed today's attendance â€” Checked In at ${fmtTime(status.lastInTime.ts)} and Checked Out at ${fmtTime(status.lastOutTime.ts)}.`;
+      state.error = `You've already completed today's attendance — Checked In at ${fmtTime(status.lastInTime.ts)} and Checked Out at ${fmtTime(status.lastOutTime.ts)}.`;
       go('staffHome');
       return;
     }
@@ -991,7 +991,7 @@ function topbar(eyebrow, title, sub){
 }
 
 function renderLoading(app){
-  app.innerHTML = `<div class="spinner-box">Loading Beaconblitz Staffâ€¦</div>`;
+  app.innerHTML = `<div class="spinner-box">Loading Beaconblitz Staff…</div>`;
 }
 
 function renderSetup(app){
@@ -1041,7 +1041,7 @@ function renderLogin(app){
         ${state.error ? `<div class="error-text">${state.error}</div>` : ''}
         <button class="btn btn-primary" id="loginBtn" onclick="doLogin()">Continue</button>
         <div style="height:14px"></div>
-        <button class="btn btn-ghost" onclick="state.pendingAttendBiz=null; go('landing')">â† Back</button>
+        <button class="btn btn-ghost" onclick="state.pendingAttendBiz=null; go('landing')">← Back</button>
       </div>
     </div>`;
 }
@@ -1116,7 +1116,7 @@ function renderRegisterBiz(app){
         ${state.error ? `<div class="error-text">${state.error}</div>` : ''}
         <button class="btn btn-marigold" id="regBtn" onclick="doRegister()">Create business</button>
         <div style="height:14px"></div>
-        <button class="btn btn-ghost" onclick="go('landing')">â† Back</button>
+        <button class="btn btn-ghost" onclick="go('landing')">← Back</button>
       </div>
     </div>`;
 }
@@ -1150,7 +1150,7 @@ async function doRegister(){
     listenAllChatsLastMessage(businessId);
     requestNotificationPermission();
       setupPushNotifications();
-    toast('Business created ðŸŽ‰');
+    toast('Business created');
     go('adminHome');
   }catch(e){
     state.error = e.message;
@@ -1174,7 +1174,7 @@ function renderAdminHome(app){
       <div class="qr-ticket">
         <div class="biz">${state.session.businessName}'s Attendance QR</div>
         <div class="qrbox" id="qrCanvas"></div>
-        <div class="hint">Staff can scan this with any camera or QR app â€” it opens straight to attendance</div>
+        <div class="hint">Staff can scan this with any camera or QR app - it opens straight to attendance</div>
       </div>
 
       <div class="card" style="display:flex; gap:10px;">
@@ -1184,17 +1184,17 @@ function renderAdminHome(app){
 
       <div class="section-title">More tools</div>
       <div class="tile-grid">
-        ${tileHTML('ðŸ¤','#FDE3EE','Meetings',"go('adminMeetings')")}
-        ${tileHTML('ðŸ—“ï¸','#FFE3CC','Leave Requests',"go('adminLeaves')")}
-        ${tileHTML('ðŸ“£','#FDE7E7','Complaints',"go('adminComplaints')")}
-        ${tileHTML('ðŸ§©','#E3F0FF','Manage Apps',"go('adminApps')")}
-        ${tileHTML('ðŸ“','#FDE3EE','Live Location',"go('adminLiveMap')")}
-        ${tileHTML('ðŸ’¬','#E3F0FF','Chat',"go('adminChatList')")}
+        ${tileHTML('🤝','#FDE3EE','Meetings',"go('adminMeetings')")}
+        ${tileHTML('🗓️','#FFE3CC','Leave Requests',"go('adminLeaves')")}
+        ${tileHTML('📣','#FDE7E7','Complaints',"go('adminComplaints')")}
+        ${tileHTML('🧩','#E3F0FF','Manage Apps',"go('adminApps')")}
+        ${tileHTML('📍','#FDE3EE','Live Location',"go('adminLiveMap')")}
+        ${tileHTML('💬','#E3F0FF','Chat',"go('adminChatList')")}
       </div>
       ${state.apps.length ? `
         <div class="section-title">Your Apps</div>
         <div class="tile-grid">
-          ${state.apps.map(a=>tileHTML(a.icon||'ðŸ”—','#E9E6FF', a.name, `window.open('${a.url}','_blank')`)).join('')}
+          ${state.apps.map(a=>tileHTML(a.icon||'🔗','#E9E6FF', a.name, `window.open('${a.url}','_blank')`)).join('')}
         </div>
       ` : ''}
     </div>
@@ -1212,14 +1212,14 @@ function renderAdminHome(app){
 function bottomNav(active){
   const isAdmin = state.session.role === 'admin';
   const items = isAdmin
-    ? [['adminHome','ðŸ ','Home'],['adminStaff','ðŸ‘¥','Staff'],['adminAttendance','ðŸ—“ï¸','Attendance'],['adminSalary','ðŸ’°','Salary']]
-    : [['staffHome','ðŸ ','Home'],['staffSalary','ðŸ’°','Salary']];
+    ? [['adminHome','🏠','Home'],['adminStaff','👥','Staff'],['adminAttendance','🗓️','Attendance'],['adminSalary','💰','Salary']]
+    : [['staffHome','🏠','Home'],['staffSalary','💰','Salary']];
   return `<div class="bottom-nav">
     ${items.map(([key,icon,label])=>`
       <button class="${active===key?'active':''}" onclick="go('${key}')">
         <span class="icon">${icon}</span>${label}
       </button>`).join('')}
-    <button onclick="doLogout()"><span class="icon">â†©ï¸</span>Logout</button>
+    <button onclick="doLogout()"><span class="icon">↩️</span>Logout</button>
   </div>`;
 }
 
@@ -1243,7 +1243,7 @@ function renderAdminStaff(app){
   const fullCount = state.staffList.filter(s=>(s.employmentType||'full_time')==='full_time').length;
   const partCount = state.staffList.filter(s=>s.employmentType==='part_time').length;
   app.innerHTML = `
-    ${topbar('Team', 'Staff', `${fullCount} Full Time Â· ${partCount} Part Time`)}
+    ${topbar('Team', 'Staff', `${fullCount} Full Time · ${partCount} Part Time`)}
     <div class="screen">
       <button class="btn btn-marigold" onclick="go('addStaff')">+ Add New Staff</button>
       <div class="chip-row">
@@ -1259,12 +1259,12 @@ function renderAdminStaff(app){
                 <div class="avatar">${(s.name||'?')[0].toUpperCase()}</div>
                 <div>
                   <div class="staff-name">${s.name}</div>
-                  <div class="staff-sub">${s.designation || 'Staff'} Â· ${s.mobile} Â· ${s.employmentType==='part' ? 'Part Time' : 'Full Time'}</div>
+                  <div class="staff-sub">${s.designation || 'Staff'} · ${s.mobile} · ${s.employmentType==='part' ? 'Part Time' : 'Full Time'}</div>
                 </div>
               </div>
               <div style="display:flex; flex-direction:column; align-items:flex-end; gap:4px;">
                 <span class="badge ${(s.employmentType||'full_time')==='full_time'?'badge-in':'badge-half'}">${(s.employmentType||'full_time')==='full_time'?'Full Time':'Part Time'}</span>
-                <span class="staff-sub">Edit â€º</span>
+                <span class="staff-sub">Edit ›</span>
               </div>
             </div>
           `).join('')}
@@ -1305,13 +1305,13 @@ function renderAddStaff(app){
         <input id="stCheckOut" type="time" value="18:00">
         <label>Grace Period (minutes)</label>
         <input id="stGrace" type="number" min="0" value="30" placeholder="30">
-        <label>Monthly Salary (â‚¹)</label>
+        <label>Monthly Salary (₹)</label>
         <input id="stSalary" type="number" min="0" placeholder="e.g. 15000">
         <div class="staff-sub" style="margin:-8px 0 14px;">If check-in happens later than Check-In Time + Grace Period, that day is auto-marked Half Day.</div>
         ${state.error ? `<div class="error-text">${state.error}</div>` : ''}
         <button class="btn btn-primary" id="addStaffBtn" onclick="doAddStaff()">Add Staff</button>
         <div style="height:10px"></div>
-        <button class="btn btn-ghost" onclick="go('adminStaff')">â† Cancel</button>
+        <button class="btn btn-ghost" onclick="go('adminStaff')">← Cancel</button>
       </div>
     </div>
   `;
@@ -1326,7 +1326,7 @@ function renderEditStaff(app){
   const s = state.staffList.find(x=>x.id===state.editingStaffId);
   if (!s){ go('adminStaff'); return; }
   app.innerHTML = `
-    ${topbar('Team','Edit Staff', s.mobile + ' Â· PIN not shown here')}
+    ${topbar('Team','Edit Staff', s.mobile + ' · PIN not shown here')}
     <div class="screen">
       <div class="card">
         <label>Staff name</label>
@@ -1350,16 +1350,16 @@ function renderEditStaff(app){
         <input id="editCheckOut" type="time" value="${s.expectedCheckOut || '18:00'}">
         <label>Grace Period (minutes)</label>
         <input id="editGrace" type="number" min="0" value="${s.graceMinutes!=null ? s.graceMinutes : 30}">
-        <label>Monthly Salary (â‚¹)</label>
+        <label>Monthly Salary (₹)</label>
         <input id="editSalary" type="number" min="0" value="${s.monthlySalary!=null ? s.monthlySalary : 0}">
         ${state.error ? `<div class="error-text">${state.error}</div>` : ''}
         <button class="btn btn-primary" id="editStaffBtn" onclick="doUpdateStaff()">Save Changes</button>
         <div style="height:10px"></div>
-        <button class="btn btn-ghost" onclick="go('adminStaff')">â† Cancel</button>
+        <button class="btn btn-ghost" onclick="go('adminStaff')">← Cancel</button>
       </div>
       <div class="card">
         <div class="staff-sub" style="margin-bottom:10px;">This permanently removes ${s.name}'s login, and all their attendance, leave, and complaint records. This can't be undone.</div>
-        <button class="btn btn-outline" style="border-color:var(--danger); color:var(--danger);" id="deleteStaffBtn" onclick="doDeleteStaff()">ðŸ—‘ Delete Staff & All Data</button>
+        <button class="btn btn-outline" style="border-color:var(--danger); color:var(--danger);" id="deleteStaffBtn" onclick="doDeleteStaff()">🗑 Delete Staff & All Data</button>
       </div>
     </div>
   `;
@@ -1428,7 +1428,7 @@ async function doAddStaff(){
   btn.disabled = true; btn.textContent = 'Adding...';
   try{
     await addStaff(state.session.businessId, data);
-    toast(`${data.name} added â€” share mobile + PIN with them to log in`);
+    toast(`${data.name} added — share mobile + PIN with them to log in`);
     go('adminStaff');
   }catch(e){
     state.error = e.message; render();
@@ -1485,7 +1485,7 @@ function payForStatus(staff, status, leavePaid){
 }
 function statusLabel(status, leavePaid){
   if (status==='leave') return leavePaid ? 'Paid Leave' : 'Unpaid Leave';
-  return { present:'Present', half:'Half Day', absent:'Absent', pending:'Pending', future:'â€”', holiday:'Sunday (Unpaid)' }[status] || status;
+  return { present:'Present', half:'Half Day', absent:'Absent', pending:'Pending', future:'—', holiday:'Sunday (Unpaid)' }[status] || status;
 }
 function statusBadgeClass(status, leavePaid){
   if (status==='leave') return leavePaid ? 'badge-in' : 'badge-out';
@@ -1498,7 +1498,7 @@ function isApprovedLeaveDay(staffId, dateObj){
   );
 }
 function fmtTime(ts){
-  if (!ts) return 'â€”';
+  if (!ts) return '—';
   return new Date(ts).toLocaleTimeString('en-IN', { hour:'2-digit', minute:'2-digit' });
 }
 function fmtDateLabel(ts){
@@ -1555,9 +1555,9 @@ function salaryHeaderControls(){
   const monthName = new Date(state.salary.year, state.salary.month).toLocaleDateString('en-IN',{month:'long', year:'numeric'});
   return `
     <div class="card" style="display:flex; align-items:center; justify-content:space-between; padding:14px 18px;">
-      <button class="btn-ghost" style="width:auto; padding:6px 10px;" onclick="shiftSalaryMonth(-1)">â€¹</button>
+      <button class="btn-ghost" style="width:auto; padding:6px 10px;" onclick="shiftSalaryMonth(-1)">‹</button>
       <div style="font-family:'Sora',sans-serif; font-weight:700;">${monthName}</div>
-      <button class="btn-ghost" style="width:auto; padding:6px 10px;" onclick="shiftSalaryMonth(1)">â€º</button>
+      <button class="btn-ghost" style="width:auto; padding:6px 10px;" onclick="shiftSalaryMonth(1)">›</button>
     </div>`;
 }
 
@@ -1591,7 +1591,7 @@ function renderStaffSalary(app){
       state.ownStaffRecord = { id: state.session.staffId, ...snap.val() };
       if (state.screen === 'staffSalary') render();
     });
-    app.innerHTML = `${topbar('Payroll','My Salary','')}<div class="spinner-box">Loadingâ€¦</div>${bottomNav('staffSalary')}`;
+    app.innerHTML = `${topbar('Payroll','My Salary','')}<div class="spinner-box">Loading…</div>${bottomNav('staffSalary')}`;
     return;
   }
   app.innerHTML = `
@@ -1626,8 +1626,8 @@ function renderSalaryBody(staff, staffAttendance){
       <div class="stat"><div class="num">${holidayDays}</div><div class="lbl">Sun. Holiday</div></div>
     </div>
     <div class="card" style="text-align:center;">
-      <div class="staff-sub">Earned this month (â‚¹${(Number(staff.monthlySalary)||0).toLocaleString('en-IN')} / month) Â· 3 paid leaves/month</div>
-      <div style="font-family:'Sora',sans-serif; font-weight:800; font-size:26px; color:var(--indigo); margin-top:4px;">â‚¹${totalPay.toLocaleString('en-IN', {maximumFractionDigits:0})}</div>
+      <div class="staff-sub">Earned this month (₹${(Number(staff.monthlySalary)||0).toLocaleString('en-IN')} / month) · 3 paid leaves/month</div>
+      <div style="font-family:'Sora',sans-serif; font-weight:800; font-size:26px; color:var(--indigo); margin-top:4px;">₹${totalPay.toLocaleString('en-IN', {maximumFractionDigits:0})}</div>
     </div>
     <div class="card">
       ${rows.length===0 ? `<div class="empty">No days to show yet.</div>` :
@@ -1635,11 +1635,11 @@ function renderSalaryBody(staff, staffAttendance){
           <div class="attendance-item">
             <div class="att-left">
               <div class="staff-name" style="font-size:14px;">${r.dateObj.toLocaleDateString('en-IN',{day:'2-digit', month:'short', weekday:'short'})}</div>
-              <div class="staff-sub mono">${r.inTime ? 'In ' + fmtTime(r.inTime) : 'â€”'}${r.outTime ? ' Â· Out ' + fmtTime(r.outTime) : ''}</div>
+              <div class="staff-sub mono">${r.inTime ? 'In ' + fmtTime(r.inTime) : '—'}${r.outTime ? ' · Out ' + fmtTime(r.outTime) : ''}</div>
             </div>
             <div class="att-right">
               <span class="badge ${statusBadgeClass(r.status, r.leavePaid)}">${statusLabel(r.status, r.leavePaid)}</span>
-              <span class="staff-sub mono">â‚¹${r.pay.toLocaleString('en-IN',{maximumFractionDigits:0})}</span>
+              <span class="staff-sub mono">₹${r.pay.toLocaleString('en-IN',{maximumFractionDigits:0})}</span>
             </div>
           </div>
         `).join('')}
@@ -1724,8 +1724,8 @@ function renderAdminAttendance(app){
                     <span class="badge ${a.type==='in'?'badge-in':'badge-out'}">${a.type==='in'?'Check In':'Check Out'}</span>
                     ${a.lat && a.lng ? `<a class="map-link" href="https://www.google.com/maps?q=${a.lat},${a.lng}" target="_blank" rel="noopener" onclick="event.stopPropagation()">View location</a>` : ''}
                     <div style="display:flex; gap:10px; align-items:center;">
-                      <span class="staff-sub">Edit â€º</span>
-                      <button class="link" style="color:var(--danger);" onclick="event.stopPropagation(); doQuickDeleteAttendance('${a.id}')">ðŸ—‘</button>
+                      <span class="staff-sub">Edit ›</span>
+                      <button class="link" style="color:var(--danger);" onclick="event.stopPropagation(); doQuickDeleteAttendance('${a.id}')">🗑</button>
                     </div>
                   </div>
                 </div>
@@ -1769,7 +1769,7 @@ function renderEditAttendance(app){
         <div style="height:10px"></div>
         <button class="btn btn-outline" style="border-color:var(--danger); color:var(--danger);" onclick="doDeleteAttendance()">Delete This Record</button>
         <div style="height:10px"></div>
-        <button class="btn btn-ghost" onclick="go('adminAttendance')">â† Cancel</button>
+        <button class="btn btn-ghost" onclick="go('adminAttendance')">← Cancel</button>
       </div>
     </div>
   `;
@@ -1868,9 +1868,9 @@ function renderAddManualAttendance(app){
       </div>
 
       <div class="card" style="display:flex; align-items:center; justify-content:space-between; padding:14px 18px;">
-        <button class="btn-ghost" style="width:auto; padding:6px 10px;" onclick="shiftManualCalMonth(-1)">â€¹</button>
+        <button class="btn-ghost" style="width:auto; padding:6px 10px;" onclick="shiftManualCalMonth(-1)">‹</button>
         <div style="font-family:'Sora',sans-serif; font-weight:700;">${monthName}</div>
-        <button class="btn-ghost" style="width:auto; padding:6px 10px;" onclick="shiftManualCalMonth(1)">â€º</button>
+        <button class="btn-ghost" style="width:auto; padding:6px 10px;" onclick="shiftManualCalMonth(1)">›</button>
       </div>
 
       <div class="card">
@@ -1880,7 +1880,7 @@ function renderAddManualAttendance(app){
         <div style="display:grid; grid-template-columns:repeat(7,1fr); gap:2px;">
           ${cells}
         </div>
-        <div class="staff-sub" style="margin-top:10px;">ðŸŸ¢ Present Â· ðŸŸ  Half Day Â· ðŸ”´ Absent Â· ðŸ”µ Sunday (Unpaid) Â· ðŸŸ£ Leave</div>
+        <div class="staff-sub" style="margin-top:10px;">Present · Half Day · Absent · Sunday (Unpaid) · Leave</div>
       </div>
 
       ${state.manualCal.selectedDate ? `
@@ -1905,7 +1905,7 @@ function renderAddManualAttendance(app){
         </div>
       ` : ''}
 
-      <button class="btn btn-ghost" onclick="go('adminAttendance')">â† Back to Attendance</button>
+      <button class="btn btn-ghost" onclick="go('adminAttendance')">← Back to Attendance</button>
     </div>
   `;
 }
@@ -1993,7 +1993,7 @@ async function doAutoCheckout(){
   const { inRec, outRec } = getTodayInOut(state.attendance);
   if (!inRec || (outRec && outRec.ts >= inRec.ts)) return;
   await markAttendance(state.session.businessId, state.session.staffId, state.session.name, 'out', null, null, { auto:true });
-  toast('Auto checked-out â€” your 9 hour shift ended');
+  toast('Auto checked-out — your 9 hour shift ended');
   if (state.screen==='staffHome') render();
 }
 
@@ -2008,7 +2008,7 @@ function shiftTimerNote(){
     const remainingMs = Math.max(0, inRec.ts + SHIFT_DURATION_MS - Date.now());
     const h = Math.floor(remainingMs/3600000);
     const m = Math.floor((remainingMs%3600000)/60000);
-    return `â± Auto checkout in ${h}h ${m}m`;
+    return `⏱ Auto checkout in ${h}h ${m}m`;
   } else {
     if (state.activeShiftInTs){ clearShiftTimers(); state.activeShiftInTs = null; }
     return '';
@@ -2030,25 +2030,25 @@ function renderStaffHome(app){
     <div class="screen">
       ${state.error ? `<div class="error-text" style="margin:0;">${state.error}</div>` : ''}
       <div class="staff-sub" style="margin-bottom:-6px;">
-        ${last ? `Last punch: <strong>${last.type==='in'?'Checked In':'Checked Out'}</strong> Â· ${fmtTime(last.ts)}` : 'No attendance yet today'}
-        ${upcomingMeetings.length ? ` Â· ðŸ“… ${upcomingMeetings.length} upcoming meeting(s)` : ''}
+        ${last ? `Last punch: <strong>${last.type==='in'?'Checked In':'Checked Out'}</strong> · ${fmtTime(last.ts)}` : 'No attendance yet today'}
+        ${upcomingMeetings.length ? ` · Meetings: ${upcomingMeetings.length} upcoming meeting(s)` : ''}
       </div>
       ${shiftTimerNote() ? `<div class="staff-sub" style="font-weight:600; color:var(--indigo);">${shiftTimerNote()}</div>` : ''}
       <div class="section-title">What do you want to do today?</div>
       <div class="tile-grid">
-        ${tileHTML('ðŸ“·','#E9E6FF','Attendance',"go('scanning')")}
-        ${tileHTML('ðŸ—“ï¸','#FFE3CC','Apply Leave',"go('applyLeave')")}
-        ${tileHTML('ðŸ’µ','#DDF3E7','Payslip',"go('staffSalary')")}
-        ${tileHTML('ðŸ¤','#FDE3EE','Meeting',"go('staffMeetings')")}
-        ${tileHTML('âœ…','#E3F0FF','Todo',"window.open('https://beaconblitz.github.io/bb-to-do/','_blank')")}
-        ${tileHTML('ðŸ“£','#FDE7E7','Complaints',"go('complaintForm')")}
-        ${tileHTML('ðŸŽ','#FFF3D6','Rewards',"go('rewards')")}
-        ${tileHTML('ðŸ’¬','#E3F0FF','Chat with Admin',"openStaffChat()")}
+        ${tileHTML('📷','#E9E6FF','Attendance',"go('scanning')")}
+        ${tileHTML('🗓️','#FFE3CC','Apply Leave',"go('applyLeave')")}
+        ${tileHTML('💵','#DDF3E7','Payslip',"go('staffSalary')")}
+        ${tileHTML('🤝','#FDE3EE','Meeting',"go('staffMeetings')")}
+        ${tileHTML('✅','#E3F0FF','Todo',"window.open('https://beaconblitz.github.io/bb-to-do/','_blank')")}
+        ${tileHTML('📣','#FDE7E7','Complaints',"go('complaintForm')")}
+        ${tileHTML('🎁','#FFF3D6','Rewards',"go('rewards')")}
+        ${tileHTML('💬','#E3F0FF','Chat with Admin',"openStaffChat()")}
       </div>
       ${state.apps.length ? `
         <div class="section-title">Company Apps</div>
         <div class="tile-grid">
-          ${state.apps.map(a=>tileHTML(a.icon||'ðŸ”—','#E9E6FF', a.name, `window.open('${a.url}','_blank')`)).join('')}
+          ${state.apps.map(a=>tileHTML(a.icon||'🔗','#E9E6FF', a.name, `window.open('${a.url}','_blank')`)).join('')}
         </div>
       ` : ''}
     </div>
@@ -2073,7 +2073,7 @@ function renderApplyLeave(app){
         ${state.error ? `<div class="error-text">${state.error}</div>` : ''}
         <button class="btn btn-marigold" id="applyLeaveBtn" onclick="doApplyLeave()">Submit Request</button>
         <div style="height:8px"></div>
-        <button class="btn btn-ghost" onclick="go('staffHome')">â† Back</button>
+        <button class="btn btn-ghost" onclick="go('staffHome')">← Back</button>
       </div>
       <div class="card">
         <h3 style="margin:0 0 10px; font-size:15px;">My Leave Requests</h3>
@@ -2081,7 +2081,7 @@ function renderApplyLeave(app){
           state.leaves.map(l=>`
             <div class="attendance-item">
               <div class="att-left">
-                <div class="staff-name" style="font-size:14px;">${l.fromDate}${l.toDate && l.toDate!==l.fromDate ? ' â†’ '+l.toDate : ''}</div>
+                <div class="staff-name" style="font-size:14px;">${l.fromDate}${l.toDate && l.toDate!==l.fromDate ? ' → '+l.toDate : ''}</div>
                 <div class="staff-sub">${l.reason||''}</div>
               </div>
               <span class="badge ${l.status==='approved'?'badge-in':l.status==='rejected'?'badge-out':'badge-pending'}">${l.status}</span>
@@ -2121,12 +2121,12 @@ function renderStaffMeetings(app){
                 <div class="staff-sub">${m.notes||''}</div>
               </div>
               <div class="att-right">
-                <span class="staff-sub mono">${m.date}${m.time ? ' Â· '+m.time : ''}</span>
+                <span class="staff-sub mono">${m.date}${m.time ? ' · '+m.time : ''}</span>
               </div>
             </div>
           `).join('')}
       </div>
-      <button class="btn btn-ghost" onclick="go('staffHome')">â† Back</button>
+      <button class="btn btn-ghost" onclick="go('staffHome')">← Back</button>
     </div>
   `;
 }
@@ -2143,7 +2143,7 @@ function renderComplaintForm(app){
         ${state.error ? `<div class="error-text">${state.error}</div>` : ''}
         <button class="btn btn-marigold" id="complaintBtn" onclick="doSubmitComplaint()">Send to Admin</button>
         <div style="height:8px"></div>
-        <button class="btn btn-ghost" onclick="go('staffHome')">â† Cancel</button>
+        <button class="btn btn-ghost" onclick="go('staffHome')">← Cancel</button>
       </div>
     </div>
   `;
@@ -2157,7 +2157,7 @@ async function doSubmitComplaint(){
     await submitComplaint(state.session.businessId, state.session.staffId, state.session.name, message);
     const adminMobile = state.session.adminMobile;
     if (adminMobile){
-      const waMsg = `ðŸ“£ Complaint from ${state.session.name} (${state.session.businessName}): ${message}`;
+      const waMsg = `Complaint from ${state.session.name} (${state.session.businessName}): ${message}`;
       window.open(`https://wa.me/91${adminMobile}?text=${encodeURIComponent(waMsg)}`, '_blank');
     }
     toast('Complaint sent to admin');
@@ -2173,11 +2173,11 @@ function renderRewards(app){
     ${topbar('Recognition','Rewards','Coming soon')}
     <div class="screen">
       <div class="card" style="text-align:center; padding:40px 20px;">
-        <div style="font-size:40px; margin-bottom:10px;">ðŸŽ</div>
+        <div style="font-size:24px; font-weight:800; margin-bottom:10px;">GIFT</div>
         <div class="staff-name" style="margin-bottom:6px;">Rewards program coming soon</div>
         <div class="staff-sub">Your admin will be able to recognise good attendance and performance here.</div>
       </div>
-      <button class="btn btn-ghost" onclick="go('staffHome')">â† Back</button>
+      <button class="btn btn-ghost" onclick="go('staffHome')">← Back</button>
     </div>
   `;
 }
@@ -2185,7 +2185,7 @@ function renderRewards(app){
 /* ---------------- Meetings (admin manages) ---------------- */
 function renderAdminMeetings(app){
   app.innerHTML = `
-    ${topbar('Team','Meetings','Add a meeting â€” staff will see it on their Meeting tile')}
+    ${topbar('Team','Meetings','Add a meeting — staff will see it on their Meeting tile')}
     <div class="screen">
       <div class="card">
         <label>Title</label>
@@ -2208,7 +2208,7 @@ function renderAdminMeetings(app){
                 <div class="staff-sub">${m.notes||''}</div>
               </div>
               <div class="att-right">
-                <span class="staff-sub mono">${m.date}${m.time ? ' Â· '+m.time : ''}</span>
+                <span class="staff-sub mono">${m.date}${m.time ? ' · '+m.time : ''}</span>
                 <button class="link" style="color:var(--danger);" onclick="doDeleteMeeting('${m.id}')">Remove</button>
               </div>
             </div>
@@ -2252,7 +2252,7 @@ function renderAdminLeaves(app){
             <div class="attendance-item">
               <div class="att-left">
                 <div class="staff-name" style="font-size:14px;">${l.staffName}</div>
-                <div class="staff-sub">${l.fromDate}${l.toDate && l.toDate!==l.fromDate ? ' â†’ '+l.toDate : ''} Â· ${l.reason||''}</div>
+                <div class="staff-sub">${l.fromDate}${l.toDate && l.toDate!==l.fromDate ? ' → '+l.toDate : ''} · ${l.reason||''}</div>
               </div>
               <div class="att-right">
                 ${l.status==='pending' ? `
@@ -2298,7 +2298,7 @@ function renderAdminComplaints(app){
 
 function renderAdminApps(app){
   app.innerHTML = `
-    ${topbar('Tools','Manage Apps','Add a link â€” everyone in your business will see it as a tile on their home screen')}
+    ${topbar('Tools','Manage Apps','Add a link — everyone in your business will see it as a tile on their home screen')}
     <div class="screen">
       <div class="card">
         <label>App name</label>
@@ -2306,7 +2306,7 @@ function renderAdminApps(app){
         <label>Link (URL)</label>
         <input id="appUrl" type="url" placeholder="https://...">
         <label>Icon (optional emoji)</label>
-        <input id="appIcon" placeholder="ðŸ”—" maxlength="4">
+        <input id="appIcon" placeholder="🔗" maxlength="4">
         ${state.error ? `<div class="error-text">${state.error}</div>` : ''}
         <button class="btn btn-marigold" id="addAppBtn" onclick="doAddApp()">Add App</button>
       </div>
@@ -2315,7 +2315,7 @@ function renderAdminApps(app){
           state.apps.map(a=>`
             <div class="attendance-item">
               <div class="att-left">
-                <div class="staff-name" style="font-size:14px;">${a.icon||'ðŸ”—'} ${a.name}</div>
+                <div class="staff-name" style="font-size:14px;">${a.icon||'🔗'} ${a.name}</div>
                 <div class="staff-sub">${a.url}</div>
               </div>
               <button class="link" style="color:var(--danger);" onclick="doDeleteApp('${a.id}')">Remove</button>
@@ -2336,7 +2336,7 @@ async function doAddApp(){
   btn.disabled = true; btn.textContent='Adding...';
   try{
     await addApp(state.session.businessId, { name, url, icon });
-    toast('App added â€” everyone will see it on their home screen');
+    toast('App added — everyone will see it on their home screen');
     go('adminApps');
   }catch(e){
     state.error = e.message; render();
@@ -2373,7 +2373,7 @@ function renderAdminLiveMap(app){
       <div class="card">
         <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:10px;">
           <h3 style="margin:0; font-size:15px;">Live Now</h3>
-          ${state.liveLocations.length ? `<button class="link" onclick="doRefreshAllLocations()">ðŸ”„ Refresh All</button>` : ''}
+          ${state.liveLocations.length ? `<button class="link" onclick="doRefreshAllLocations()">🔄 Refresh All</button>` : ''}
         </div>
         ${state.liveLocations.length===0 ? `<div class="list-empty-note">No staff currently sharing location.</div>` :
           state.liveLocations.map(l=>`
@@ -2383,8 +2383,8 @@ function renderAdminLiveMap(app){
                 <div class="staff-sub">Updated ${timeAgo(l.updatedAt)}</div>
               </div>
               <div class="att-right" style="gap:6px;">
-                <a class="link" href="https://www.google.com/maps?q=${l.lat},${l.lng}" target="_blank" rel="noopener">View on Map â€º</a>
-                <button class="link" onclick="doRequestLocation('${l.staffId}')">ðŸ”„ Refresh Now</button>
+                <a class="link" href="https://www.google.com/maps?q=${l.lat},${l.lng}" target="_blank" rel="noopener">View on Map ›</a>
+                <button class="link" onclick="doRequestLocation('${l.staffId}')">🔄 Refresh Now</button>
               </div>
             </div>
           `).join('')}
@@ -2395,7 +2395,7 @@ function renderAdminLiveMap(app){
           ${offlineStaff.map(s=>`
             <div class="attendance-item">
               <div class="att-left"><div class="staff-name" style="font-size:14px;">${s.name}</div></div>
-              <button class="link" onclick="doRequestLocation('${s.id}')">ðŸ”„ Request Location</button>
+              <button class="link" onclick="doRequestLocation('${s.id}')">🔄 Request Location</button>
             </div>
           `).join('')}
         </div>
@@ -2428,7 +2428,7 @@ function renderAdminLiveMap(app){
 
 async function doRequestLocation(staffId){
   await requestLocationNow(state.session.businessId, staffId);
-  toast('Location refresh requested â€” updates in a few seconds');
+  toast('Location refresh requested — updates in a few seconds');
 }
 async function doRefreshAllLocations(){
   await Promise.all(state.liveLocations.map(l=>requestLocationNow(state.session.businessId, l.staffId)));
@@ -2465,7 +2465,7 @@ function renderAdminChatList(app){
                   <div class="avatar">${(s.name||'?')[0].toUpperCase()}</div>
                   <div>
                     <div class="staff-name">${s.name}</div>
-                    <div class="staff-sub">${last ? (last.text.length>30 ? last.text.slice(0,30)+'â€¦' : last.text) : 'No messages yet'}</div>
+                    <div class="staff-sub">${last ? (last.text.length>30 ? last.text.slice(0,30)+'…' : last.text) : 'No messages yet'}</div>
                   </div>
                 </div>
                 <span class="staff-sub">${last ? fmtTime(last.ts) : ''}</span>
@@ -2484,12 +2484,12 @@ function renderChatThread(app){
     ${topbar('Chat', state.chatWithStaffName || '', '')}
     <div class="screen" style="flex:1; min-height:0; display:flex; flex-direction:column;">
       <div style="display:flex; justify-content:space-between; align-items:center;">
-        <button class="btn-ghost" style="width:auto; padding:6px 0;" onclick="closeChatThread()">â† Back</button>
-        ${state.chatMessages.length ? `<button class="link" style="color:var(--danger);" onclick="doClearChat()">ðŸ—‘ Clear Chat</button>` : ''}
+        <button class="btn-ghost" style="width:auto; padding:6px 0;" onclick="closeChatThread()">← Back</button>
+        ${state.chatMessages.length ? `<button class="link" style="color:var(--danger);" onclick="doClearChat()">🗑 Clear Chat</button>` : ''}
       </div>
       <div class="chat-thread-wrap" style="flex:1; min-height:0;">
         <div class="chat-messages" id="chatMessagesEl">
-          ${state.chatMessages.length===0 ? `<div class="list-empty-note">No messages yet â€” say hi ðŸ‘‹</div>` :
+          ${state.chatMessages.length===0 ? `<div class="list-empty-note">No messages yet — say hi 👋</div>` :
             state.chatMessages.map(m=>{
               const own = (isAdmin && m.sender==='admin') || (!isAdmin && m.sender==='staff');
               return `
@@ -2497,7 +2497,7 @@ function renderChatThread(app){
                   <div class="chat-bubble ${own?'own':'other'}">
                     ${m.text.replace(/</g,'&lt;')}
                     <span class="chat-time">${fmtTime(m.ts)}</span>
-                    <button class="chat-del" onclick="doDeleteChatMessage('${m.id}')" title="Delete">âœ•</button>
+                    <button class="chat-del" onclick="doDeleteChatMessage('${m.id}')" title="Delete">✕</button>
                   </div>
                 </div>
               `;
@@ -2505,7 +2505,7 @@ function renderChatThread(app){
         </div>
         <div class="chat-input-bar">
           <textarea id="chatInput" rows="1" placeholder="Type a message..." onkeydown="if(event.key==='Enter' && !event.shiftKey){event.preventDefault(); doSendChatMessage();}"></textarea>
-          <button class="chat-send-btn" onclick="doSendChatMessage()">âž¤</button>
+          <button class="chat-send-btn" onclick="doSendChatMessage()">➤</button>
         </div>
       </div>
     </div>
@@ -2628,13 +2628,13 @@ function renderConfirmPunch(app){
   const inDisabled = p.lockedType === 'out';
   const outDisabled = p.lockedType === 'in';
   app.innerHTML = `
-    ${topbar('Attendance','Confirm Your Punch','Location captured â€” pick what this scan means')}
+    ${topbar('Attendance','Confirm Your Punch','Location captured — pick what this scan means')}
     <div class="screen">
       <div class="card" style="text-align:center;">
-        <div class="staff-sub" style="margin-bottom:14px;">ðŸ“ Location captured</div>
+        <div class="staff-sub" style="margin-bottom:14px;">📍 Location captured</div>
         <div class="chip-row" style="justify-content:center;">
-          <button class="chip ${p.type==='in'?'active':''}" style="padding:14px 22px; font-size:14px; ${inDisabled?'opacity:.35; cursor:not-allowed;':''}" onclick="setPendingType('in')">âœ“ Check In</button>
-          <button class="chip ${p.type==='out'?'active':''}" style="padding:14px 22px; font-size:14px; ${outDisabled?'opacity:.35; cursor:not-allowed;':''}" onclick="setPendingType('out')">â†© Check Out</button>
+          <button class="chip ${p.type==='in'?'active':''}" style="padding:14px 22px; font-size:14px; ${inDisabled?'opacity:.35; cursor:not-allowed;':''}" onclick="setPendingType('in')">✓ Check In</button>
+          <button class="chip ${p.type==='out'?'active':''}" style="padding:14px 22px; font-size:14px; ${outDisabled?'opacity:.35; cursor:not-allowed;':''}" onclick="setPendingType('out')">↩ Check Out</button>
         </div>
         ${p.lockedType ? `<div class="staff-sub" style="margin-top:12px;">You've already ${p.lockedType==='out'?'checked in':'checked out'} today, so only ${p.lockedType==='out'?'Check Out':'Check In'} is available.</div>` : ''}
       </div>
@@ -2645,24 +2645,24 @@ function renderConfirmPunch(app){
 }
 
 function renderPunching(app){
-  app.innerHTML = `<div class="spinner-box">Getting your locationâ€¦</div>`;
+  app.innerHTML = `<div class="spinner-box">Getting your location…</div>`;
 }
 
 function renderPunchResult(app){
   const type = state.lastPunchType || 'in';
   const now = new Date();
   const adminMobile = state.lastPunchAdminMobile;
-  const waMsg = `${type==='in' ? 'âœ… Checked IN' : 'â†© Checked OUT'} â€” ${state.session.name} at ${now.toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit'})} on ${now.toLocaleDateString('en-IN',{day:'2-digit',month:'short'})} (${state.session.businessName})`;
+  const waMsg = `${type==='in' ? 'Checked IN' : 'Checked OUT'} - ${state.session.name} at ${now.toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit'})} on ${now.toLocaleDateString('en-IN',{day:'2-digit',month:'short'})} (${state.session.businessName})`;
   const waLink = adminMobile ? `https://wa.me/91${adminMobile}?text=${encodeURIComponent(waMsg)}` : null;
   app.innerHTML = `
     <div class="screen">
       <div class="card scan-punch ${type==='out'?'out':''}">
-        <div class="stamp">${type==='in' ? 'âœ“' : 'â†©'}</div>
+        <div class="stamp">${type==='in' ? '✓' : '↩'}</div>
         <h2 style="margin:0;">${type==='in' ? 'Checked In' : 'Checked Out'}</h2>
         <div class="time mono">${now.toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit'})}</div>
         <div class="date">${now.toLocaleDateString('en-IN',{weekday:'long', day:'numeric', month:'long'})}</div>
       </div>
-      ${waLink ? `<a class="btn btn-outline" style="text-decoration:none;" href="${waLink}" target="_blank" rel="noopener">ðŸ“² Notify Admin on WhatsApp</a>` : ''}
+      ${waLink ? `<a class="btn btn-outline" style="text-decoration:none;" href="${waLink}" target="_blank" rel="noopener">📲 Notify Admin on WhatsApp</a>` : ''}
       <button class="btn btn-primary" onclick="go('staffHome')">Done</button>
     </div>
   `;
