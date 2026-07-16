@@ -294,7 +294,7 @@
     display:flex; flex-direction:column; flex:1; min-height:0;
   }
   .chat-messages{
-    flex:1; overflow-y:auto; padding:16px 4px; display:flex; flex-direction:column; gap:10px;
+    flex:1; overflow-y:auto; padding:16px 4px 96px; display:flex; flex-direction:column; gap:10px;
   }
   .chat-bubble-row{ display:flex; }
   .chat-bubble-row.own{ justify-content:flex-end; }
@@ -305,6 +305,21 @@
   .chat-bubble.own{ background:linear-gradient(135deg,#5B4BC4,#3D2E8C); color:#fff; border-bottom-right-radius:4px; }
   .chat-bubble.other{ background:var(--clay-bg); color:var(--ink); border-bottom-left-radius:4px; }
   .chat-bubble .chat-time{ font-size:10px; opacity:0.7; margin-top:4px; display:block; }
+  .chat-image{
+    display:block; max-width:220px; width:100%; border-radius:14px; margin:2px 0 6px;
+    box-shadow: inset 2px 2px 5px rgba(0,0,0,0.08);
+  }
+  .emoji-panel{
+    display:none; grid-template-columns:repeat(8,1fr); gap:6px; padding:8px; margin:0 4px 8px;
+    background:var(--paper); border-radius:18px; box-shadow: 4px 4px 10px var(--clay-dark), -4px -4px 10px var(--clay-light);
+  }
+  .emoji-panel.open{display:grid;}
+  .emoji-panel button{border:none; background:var(--clay-bg); border-radius:10px; padding:7px 0; font-size:18px; cursor:pointer;}
+  .chat-tool-btn{
+    width:42px; height:42px; border-radius:15px; border:none; flex-shrink:0;
+    background:var(--clay-bg); color:var(--indigo); font-size:18px; cursor:pointer;
+    box-shadow: 4px 4px 8px var(--clay-dark), -4px -4px 8px var(--clay-light);
+  }
   .chat-bubble .chat-del{
     position:absolute; top:-8px; right:-8px; background:var(--danger); color:#fff; border:none;
     width:20px; height:20px; border-radius:50%; font-size:10px; cursor:pointer; display:none;
@@ -312,7 +327,10 @@
   }
   .chat-bubble-row:hover .chat-del{ display:flex; }
   .chat-input-bar{
-    display:flex; gap:8px; padding:10px 4px 4px; align-items:flex-end;
+    position:sticky; bottom:0; z-index:80;
+    display:flex; gap:8px; padding:10px 4px 8px; align-items:flex-end;
+    background:var(--clay-bg);
+    box-shadow: 0 -10px 18px rgba(146,138,204,0.22);
   }
   .chat-input-bar textarea{
     flex:1; margin-bottom:0; resize:none; max-height:100px;
@@ -383,6 +401,9 @@ const state = {
   chatSummaries: {},
   chatWithStaffId: null,
   chatWithStaffName: null,
+  notice: null,
+  noticeListenerRef: null,
+  emojiPanelOpen: false,
   error: '',
   lastPunchType: 'in',
   pendingAttendBiz: null,
@@ -664,6 +685,27 @@ async function deleteApp(businessId, appId){
   await db.ref('businesses/' + businessId + '/apps/' + appId).remove();
 }
 
+/* ---- Important Notice ---- */
+function listenNotice(businessId){
+  if (state.noticeListenerRef) state.noticeListenerRef.off();
+  const ref = db.ref('businesses/' + businessId + '/notice');
+  state.noticeListenerRef = ref;
+  ref.on('value', snap=>{
+    state.notice = snap.val() || null;
+    if (['adminHome','staffHome'].includes(state.screen)) render();
+  });
+}
+async function saveNotice(businessId, text){
+  await db.ref('businesses/' + businessId + '/notice').set({
+    text,
+    updatedAt: firebase.database.ServerValue.TIMESTAMP,
+    updatedBy: state.session ? state.session.name : ''
+  });
+}
+async function clearNotice(businessId){
+  await db.ref('businesses/' + businessId + '/notice').remove();
+}
+
 /* ---- Live Location (only while staff is on an active shift) ---- */
 function listenLiveLocations(businessId){
   if (state.liveLocationsListenerRef) state.liveLocationsListenerRef.off();
@@ -724,9 +766,9 @@ function listenChatMessages(businessId, staffId){
     if (state.screen==='adminChatList') render();
   });
 }
-async function sendChatMessage(businessId, staffId, sender, senderName, text){
+async function sendChatMessage(businessId, staffId, sender, senderName, text, imageData){
   const ref = db.ref('businesses/' + businessId + '/chats/' + staffId + '/messages').push();
-  await ref.set({ sender, senderName, text, ts: firebase.database.ServerValue.TIMESTAMP });
+  await ref.set({ sender, senderName, text: text || '', imageData: imageData || '', ts: firebase.database.ServerValue.TIMESTAMP });
 }
 async function deleteChatMessage(businessId, staffId, messageId){
   await db.ref('businesses/' + businessId + '/chats/' + staffId + '/messages/' + messageId).remove();
@@ -883,6 +925,7 @@ async function bootstrap(){
       listenApps(existing.businessId);
       listenLiveLocations(existing.businessId);
       listenAllChatsLastMessage(existing.businessId);
+      listenNotice(existing.businessId);
       requestNotificationPermission();
       setupPushNotifications();
     } else {
@@ -1097,6 +1140,7 @@ async function doLogin(){
       listenApps(session.businessId);
       listenLiveLocations(session.businessId);
       listenAllChatsLastMessage(session.businessId);
+      listenNotice(session.businessId);
       requestNotificationPermission();
       setupPushNotifications();
       go('adminHome');
@@ -1179,6 +1223,7 @@ async function doRegister(){
     listenApps(businessId);
     listenLiveLocations(businessId);
     listenAllChatsLastMessage(businessId);
+    listenNotice(businessId);
     requestNotificationPermission();
       setupPushNotifications();
     toast('Business created');
@@ -1202,6 +1247,7 @@ function renderAdminHome(app){
         <div class="stat"><div class="num">${todayIn.length}</div><div class="lbl">Checked in today</div></div>
       </div>
       ${notificationButtonHTML()}
+      ${importantNoticeHTML()}
 
       <div class="qr-ticket">
         <div class="biz">${state.session.businessName}'s Attendance QR</div>
@@ -1262,6 +1308,7 @@ function doLogout(){
   if (state.locationRequestListenerRef) state.locationRequestListenerRef.off();
   if (state.chatListenerRef) state.chatListenerRef.off();
   if (state.allChatsListenerRef) state.allChatsListenerRef.off();
+  if (state.noticeListenerRef) state.noticeListenerRef.off();
   clearShiftTimers();
   stopLiveLocationTracking();
   state.session = null;
@@ -2067,6 +2114,7 @@ function renderStaffHome(app){
       </div>
       ${shiftTimerNote() ? `<div class="staff-sub" style="font-weight:600; color:var(--indigo);">${shiftTimerNote()}</div>` : ''}
       ${notificationButtonHTML()}
+      ${importantNoticeHTML()}
       <div class="section-title">What do you want to do today?</div>
       <div class="tile-grid">
         ${tileHTML('📷','#E9E6FF','Attendance',"go('scanning')")}
@@ -2468,6 +2516,35 @@ async function doRefreshAllLocations(){
   toast('Refreshing all staff locations...');
 }
 
+
+function escapeHTML(str){
+  return String(str || '').replace(/[&<>"']/g, ch=>({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[ch]));
+}
+
+function importantNoticeHTML(){
+  const isAdmin = state.session && state.session.role === 'admin';
+  const text = state.notice && state.notice.text ? state.notice.text : '';
+  if (!isAdmin && !text) return '';
+  return `
+    <div class="card">
+      <div style="display:flex; justify-content:space-between; align-items:center; gap:10px; margin-bottom:${text || isAdmin ? '10px' : '0'};">
+        <div class="section-title" style="margin:0;">📌 Important Note</div>
+        ${isAdmin ? `<button class="link" onclick="editImportantNotice()">Edit</button>` : ''}
+      </div>
+      ${text ? `<div class="staff-sub" style="white-space:pre-wrap; font-size:14px; line-height:1.45; color:var(--ink);">${escapeHTML(text)}</div>` : `<div class="list-empty-note" style="padding:4px 0 0;">No important note set.</div>`}
+    </div>`;
+}
+
+async function editImportantNotice(){
+  const current = state.notice && state.notice.text ? state.notice.text : '';
+  const next = window.prompt('Important note for everyone', current);
+  if (next === null) return;
+  const trimmed = next.trim();
+  if (trimmed) await saveNotice(state.session.businessId, trimmed);
+  else await clearNotice(state.session.businessId);
+  toast(trimmed ? 'Important note saved' : 'Important note cleared');
+}
+
 /* ---------------- Chat ---------------- */
 function openAdminChat(staffId, staffName){
   state.chatWithStaffId = staffId;
@@ -2528,7 +2605,8 @@ function renderChatThread(app){
               return `
                 <div class="chat-bubble-row ${own?'own':''}">
                   <div class="chat-bubble ${own?'own':'other'}">
-                    ${m.text.replace(/</g,'&lt;')}
+                    ${m.imageData ? `<img class="chat-image" src="${m.imageData}" alt="Sent image">` : ''}
+                    ${m.text ? `<div>${escapeHTML(m.text)}</div>` : ''}
                     <span class="chat-time">${fmtTime(m.ts)}</span>
                     <button class="chat-del" onclick="doDeleteChatMessage('${m.id}')" title="Delete">✕</button>
                   </div>
@@ -2536,7 +2614,13 @@ function renderChatThread(app){
               `;
             }).join('')}
         </div>
+        <div class="emoji-panel ${state.emojiPanelOpen ? 'open' : ''}" id="emojiPanel">
+          ${['😀','😂','😍','👍','🙏','👏','✅','❤️','🔥','🎉','📌','⏰','💼','📷','🤝','🙌'].map(e=>`<button type="button" onclick="insertEmoji('${e}')">${e}</button>`).join('')}
+        </div>
+        <input id="chatImageInput" type="file" accept="image/*" style="display:none" onchange="handleChatImageSelected(event)">
         <div class="chat-input-bar">
+          <button class="chat-tool-btn" type="button" onclick="toggleEmojiPanel()">😊</button>
+          <button class="chat-tool-btn" type="button" onclick="document.getElementById('chatImageInput').click()">📷</button>
           <textarea id="chatInput" rows="1" placeholder="Type a message..." onkeydown="if(event.key==='Enter' && !event.shiftKey){event.preventDefault(); doSendChatMessage();}"></textarea>
           <button class="chat-send-btn" onclick="doSendChatMessage()">➤</button>
         </div>
@@ -2553,19 +2637,62 @@ function closeChatThread(){
   go(state.session.role==='admin' ? 'adminChatList' : 'staffHome');
 }
 
-async function doSendChatMessage(){
+async function doSendChatMessage(imageData){
   const input = document.getElementById('chatInput');
-  const text = input.value.trim();
-  if (!text) return;
-  input.value = '';
+  const text = input ? input.value.trim() : '';
+  if (!text && !imageData) return;
+  if (input) input.value = '';
+  state.emojiPanelOpen = false;
   const isAdmin = state.session.role === 'admin';
   await sendChatMessage(
     state.session.businessId,
     state.chatWithStaffId,
     isAdmin ? 'admin' : 'staff',
     isAdmin ? state.session.name + ' (Admin)' : state.session.name,
-    text
+    text,
+    imageData || ''
   );
+}
+
+function toggleEmojiPanel(){
+  state.emojiPanelOpen = !state.emojiPanelOpen;
+  render();
+}
+
+function insertEmoji(emoji){
+  const input = document.getElementById('chatInput');
+  if (!input) return;
+  input.value += emoji;
+  input.focus();
+}
+
+function handleChatImageSelected(event){
+  const file = event.target.files && event.target.files[0];
+  event.target.value = '';
+  if (!file) return;
+  if (!file.type.startsWith('image/')){ toast('Choose an image file.'); return; }
+  const reader = new FileReader();
+  reader.onload = ()=>{
+    compressImage(reader.result, 900, 0.72).then(dataUrl=>doSendChatMessage(dataUrl)).catch(()=>toast('Could not send image.'));
+  };
+  reader.readAsDataURL(file);
+}
+
+function compressImage(src, maxSize, quality){
+  return new Promise((resolve, reject)=>{
+    const img = new Image();
+    img.onload = ()=>{
+      const scale = Math.min(1, maxSize / Math.max(img.width, img.height));
+      const canvas = document.createElement('canvas');
+      canvas.width = Math.max(1, Math.round(img.width * scale));
+      canvas.height = Math.max(1, Math.round(img.height * scale));
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+      resolve(canvas.toDataURL('image/jpeg', quality));
+    };
+    img.onerror = reject;
+    img.src = src;
+  });
 }
 
 async function doDeleteChatMessage(messageId){
