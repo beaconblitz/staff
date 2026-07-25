@@ -2421,7 +2421,6 @@ async function doAddManualAttendance(){
   }
 }
 
-const SHIFT_DURATION_MS = 9 * 60 * 60 * 1000;
 const LIVE_LOCATION_INTERVAL_MS = 5 * 60 * 1000;
 let autoCheckoutTimeout = null;
 let shiftCountdownInterval = null;
@@ -2462,22 +2461,40 @@ function getTodayInOut(staffAttendance){
   return { inRec, outRec };
 }
 
+function getAutoCheckoutAt(inTs){
+  const inDate = new Date(inTs);
+  return new Date(inDate.getFullYear(), inDate.getMonth(), inDate.getDate() + 1, 0, 0, 0, 0).getTime();
+}
+
+function getOpenShiftForAutoCheckout(inTs){
+  let inRec = state.attendance.find(a=> a.type === 'in' && a.ts === inTs) || null;
+  if (!inRec){
+    const ins = state.attendance.filter(a=>a.type === 'in' && a.ts).sort((a,b)=>(b.ts||0)-(a.ts||0));
+    inRec = ins.find(rec=> !state.attendance.some(a=> a.type === 'out' && a.ts >= rec.ts)) || null;
+  }
+  if (!inRec) return { inRec:null, outRec:null };
+  const outRec = state.attendance
+    .filter(a=> a.type === 'out' && a.ts >= inRec.ts)
+    .sort((a,b)=>(a.ts||0)-(b.ts||0))[0] || null;
+  return { inRec, outRec };
+}
+
 function setupShiftTimer(inTs){
   clearShiftTimers();
-  const remaining = inTs + SHIFT_DURATION_MS - Date.now();
-  if (remaining <= 0){ doAutoCheckout(); return; }
-  autoCheckoutTimeout = setTimeout(doAutoCheckout, remaining);
+  const remaining = getAutoCheckoutAt(inTs) - Date.now();
+  if (remaining <= 0){ doAutoCheckout(inTs); return; }
+  autoCheckoutTimeout = setTimeout(()=>doAutoCheckout(inTs), remaining);
   shiftCountdownInterval = setInterval(()=>{ if (state.screen==='staffHome') render(); }, 60000);
 }
 
-async function doAutoCheckout(){
+async function doAutoCheckout(inTs){
   clearShiftTimers();
   state.activeShiftInTs = null;
   if (!state.session || state.session.role !== 'staff') return;
-  const { inRec, outRec } = getTodayInOut(state.attendance);
+  const { inRec, outRec } = getOpenShiftForAutoCheckout(inTs);
   if (!inRec || (outRec && outRec.ts >= inRec.ts)) return;
   await markAttendance(state.session.businessId, state.session.staffId, state.session.name, 'out', null, null, { auto:true });
-  toast('Auto checked-out — your 9 hour shift ended');
+  toast('Auto checked-out at 12:00 AM');
   if (state.screen==='staffHome') render();
 }
 
@@ -2489,10 +2506,10 @@ function shiftTimerNote(){
       state.activeShiftInTs = inRec.ts;
       setupShiftTimer(inRec.ts);
     }
-    const remainingMs = Math.max(0, inRec.ts + SHIFT_DURATION_MS - Date.now());
+    const remainingMs = Math.max(0, getAutoCheckoutAt(inRec.ts) - Date.now());
     const h = Math.floor(remainingMs/3600000);
     const m = Math.floor((remainingMs%3600000)/60000);
-    return `⏱ Auto checkout in ${h}h ${m}m`;
+    return `Auto checkout at 12:00 AM (${h}h ${m}m left)`;
   } else {
     if (state.activeShiftInTs){ clearShiftTimers(); state.activeShiftInTs = null; }
     return '';
