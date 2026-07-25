@@ -1394,11 +1394,14 @@ function renderLanding(app){
     <div class="screen">
       <div class="card">
         <div class="role-toggle">
+          <button class="${state.role==='mainAdmin'?'active':''}" onclick="setRole('mainAdmin')">Main Admin</button>
           <button class="${state.role==='admin'?'active':''}" onclick="setRole('admin')">I'm an Admin</button>
           <button class="${state.role==='staff'?'active':''}" onclick="setRole('staff')">I'm Staff</button>
         </div>
         <p class="staff-sub" style="margin-bottom:18px;">
-          ${state.role==='admin' ? 'Register your business and start adding staff.' : 'Log in with the mobile number and PIN your admin gave you.'}
+          ${state.role==='mainAdmin'
+            ? 'Log in to see every business and its details.'
+            : (state.role==='admin' ? 'Register your business and start adding staff.' : 'Log in with the mobile number and PIN your admin gave you.')}
         </p>
         <button class="btn btn-primary" onclick="go('login')">Log in</button>
         ${state.role==='admin' ? `<div style="height:10px"></div><button class="btn btn-outline" onclick="go('registerBiz')">Register a new business</button>` : ''}
@@ -1408,8 +1411,10 @@ function renderLanding(app){
 function setRole(r){ state.role = r; render(); }
 
 function renderLogin(app){
+  const loginTitle = state.role === 'mainAdmin' ? 'Main Admin Login' : (state.role==='admin' ? 'Admin Login' : 'Staff Login');
+  const loginSub = state.pendingAttendBiz ? 'Log in to confirm your attendance scan' : (state.role === 'mainAdmin' ? 'Enter your main admin mobile number and PIN' : 'Enter your mobile number and PIN');
   app.innerHTML = `
-    ${topbar('Log in', state.role==='admin' ? 'Admin Login' : 'Staff Login', state.pendingAttendBiz ? 'Log in to confirm your attendance scan' : 'Enter your mobile number and PIN')}
+    ${topbar('Log in', loginTitle, loginSub)}
     <div class="screen">
       <div class="card">
         <label>Mobile number</label>
