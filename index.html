@@ -227,6 +227,44 @@
   .role-toggle button.active{background:linear-gradient(135deg,#5B4BC4,#3D2E8C); color:#fff; box-shadow: 3px 3px 8px rgba(61,46,140,0.28), -2px -2px 6px rgba(255,255,255,0.35);}
   .login-choice-title{font-family:'Sora',sans-serif; font-size:18px; font-weight:700; margin:0 0 6px;}
   .login-choice-copy{font-size:13px; color:var(--muted); line-height:1.45; margin:0 0 16px;}
+  .login-card{position:relative; overflow:hidden;}
+  .login-card.login-error{animation:loginShake .38s ease;}
+  .login-card.login-success{animation:loginPop .46s ease;}
+  .login-card.login-error input{box-shadow: inset 4px 4px 8px var(--clay-dark), inset -4px -4px 8px var(--clay-light), 0 0 0 2px var(--danger);}
+  .login-status{
+    display:none; align-items:center; justify-content:center; gap:8px;
+    margin:-4px 0 12px; padding:10px 12px; border-radius:14px;
+    font-size:13px; font-weight:700;
+  }
+  .login-status.show{display:flex;}
+  .login-status.error{background:#FDE7E7; color:var(--danger);}
+  .login-status.success{background:#DDF3E7; color:var(--success);}
+  body.dark-mode .login-status.error{background:#4A2028;}
+  body.dark-mode .login-status.success{background:#183C31;}
+  .category-bubbles{display:flex; gap:8px; margin:0 0 16px; flex-wrap:wrap;}
+  .category-bubbles button{
+    flex:1; min-width:88px; padding:11px 10px; border:none; border-radius:999px;
+    background:var(--clay-bg); color:var(--muted); cursor:pointer;
+    font-family:'Sora',sans-serif; font-size:12px; font-weight:700;
+    box-shadow: 4px 4px 8px var(--clay-dark), -4px -4px 8px var(--clay-light);
+  }
+  .category-bubbles button.active{
+    background:linear-gradient(135deg,#5B4BC4,#3D2E8C);
+    color:#fff;
+    box-shadow: inset 2px 2px 5px rgba(0,0,0,0.25), inset -2px -2px 5px rgba(255,255,255,0.15);
+  }
+  @keyframes loginShake{
+    0%,100%{transform:translateX(0);}
+    20%{transform:translateX(-8px);}
+    40%{transform:translateX(7px);}
+    60%{transform:translateX(-5px);}
+    80%{transform:translateX(3px);}
+  }
+  @keyframes loginPop{
+    0%{transform:scale(1);}
+    45%{transform:scale(1.025);}
+    100%{transform:scale(1);}
+  }
 
   .chip-row{display:flex; gap:10px; flex-wrap:wrap; margin-bottom:16px;}
   .chip{
@@ -1021,7 +1059,7 @@ async function clearLiveLocation(businessId, staffId){
   await db.ref('businesses/' + businessId + '/liveLocations/' + staffId).remove();
 }
 
-/* ---- On-demand "refresh now" request from admin to a staff device ---- */
+/* ---- Legacy on-demand location request path; automatic tracking is primary ---- */
 async function requestLocationNow(businessId, staffId){
   await db.ref('businesses/' + businessId + '/locationRequests/' + staffId).set(firebase.database.ServerValue.TIMESTAMP);
 }
@@ -1229,7 +1267,7 @@ async function bootstrap(){
       listenMeetings(existing.businessId);
       listenLeaves(existing.businessId, existing.staffId);
       listenApps(existing.businessId);
-      startLiveLocationTracking();
+      startLiveLocationIfEnabled();
       listenLocationRequests(existing.businessId, existing.staffId);
       requestNotificationPermission();
       setupPushNotifications();
@@ -1259,6 +1297,7 @@ async function bootstrap(){
 
   if (existing){
     go(existing.role === 'mainAdmin' ? 'mainAdminHome' : (existing.role === 'admin' ? 'adminHome' : 'staffHome'));
+    if (existing.role === 'staff') promptLiveLocationConsentOnce();
   } else {
     go('landing');
   }
@@ -1391,23 +1430,14 @@ function renderSetup(app){
 }
 
 function renderLanding(app){
-  const roleTitle = state.role === 'mainAdmin' ? 'Main Admin' : (state.role === 'admin' ? 'Business Admin' : 'Staff');
-  const roleCopy = state.role === 'mainAdmin'
-    ? 'See all businesses, admins, staff, and attendance from one dashboard.'
-    : (state.role === 'admin' ? 'Manage your business, team, attendance, salary, and live location.' : 'Mark attendance, view salary, chat, and request leave.');
   app.innerHTML = `
     ${topbar('Welcome to','Beaconblitz Staff','QR attendance for your whole team')}
     <div class="screen">
       <div class="card">
-        <div class="role-toggle">
-          <button class="${state.role==='mainAdmin'?'active':''}" onclick="setRole('mainAdmin')">Main</button>
-          <button class="${state.role==='admin'?'active':''}" onclick="setRole('admin')">Admin</button>
-          <button class="${state.role==='staff'?'active':''}" onclick="setRole('staff')">Staff</button>
-        </div>
-        <div class="login-choice-title">${roleTitle}</div>
-        <p class="login-choice-copy">${roleCopy}</p>
+        <div class="login-choice-title">Sign in</div>
+        <p class="login-choice-copy">Choose your category on the next screen and continue with phone number and password.</p>
         <button class="btn btn-primary" onclick="go('login')">${iconHTML('user')}Log in</button>
-        ${state.role==='admin' ? `<div style="height:10px"></div><button class="btn btn-outline" onclick="go('registerBiz')">Register a new business</button>` : ''}
+        <div style="height:10px"></div><button class="btn btn-outline" onclick="go('registerBiz')">Register a new business</button>
       </div>
     </div>`;
 }
@@ -1417,23 +1447,24 @@ function renderLogin(app){
   const loginTitle = state.role === 'mainAdmin' ? 'Main Admin Login' : (state.role==='admin' ? 'Admin Login' : 'Staff Login');
   const loginSub = state.pendingAttendBiz ? 'Log in to confirm your attendance scan' : (state.role === 'mainAdmin' ? 'Enter your main admin mobile number and PIN' : 'Enter your mobile number and PIN');
   app.innerHTML = `
-    ${topbar('Log in', loginTitle, loginSub)}
+        ${topbar('Log in', loginTitle, loginSub)}
     <div class="screen">
-      <div class="card">
-        <div class="role-toggle">
-          <button class="${state.role==='mainAdmin'?'active':''}" onclick="setRole('mainAdmin')">Main</button>
-          <button class="${state.role==='admin'?'active':''}" onclick="setRole('admin')">Admin</button>
-          <button class="${state.role==='staff'?'active':''}" onclick="setRole('staff')">Staff</button>
+      <div class="card login-card" id="loginCard">
+        <label>Category</label>
+        <div class="category-bubbles">
+          <button type="button" class="${state.role==='staff'?'active':''}" onclick="setRole('staff')">Staff</button>
+          <button type="button" class="${state.role==='admin'?'active':''}" onclick="setRole('admin')">Admin</button>
+          <button type="button" class="${state.role==='mainAdmin'?'active':''}" onclick="setRole('mainAdmin')">Main Admin</button>
         </div>
-        <label>Mobile number</label>
+        <label>Phone number</label>
         <input id="loginMobile" type="tel" maxlength="10" placeholder="9876543210">
-        <label>PIN</label>
-        <input id="loginPin" type="password" maxlength="6" placeholder="4-digit PIN">
+        <label>Password</label>
+        <input id="loginPin" type="password" maxlength="6" placeholder="Enter password">
         <div style="display:flex; align-items:center; gap:8px; margin:-6px 0 14px;">
           <input type="checkbox" id="rememberMe" checked style="width:auto; margin:0;">
           <label for="rememberMe" style="text-transform:none; font-weight:500; font-size:13px; letter-spacing:normal; margin:0; color:var(--muted);">Keep me logged in on this device</label>
         </div>
-        ${state.error ? `<div class="error-text">${state.error}</div>` : ''}
+        <div class="login-status ${state.error ? 'show error' : ''}" id="loginStatus">${state.error ? `${iconHTML('x')} ${state.error}` : ''}</div>
         <button class="btn btn-primary" id="loginBtn" onclick="doLogin()">Continue</button>
         <div style="height:14px"></div>
         <button class="btn btn-ghost" onclick="state.pendingAttendBiz=null; go('landing')">← Back</button>
@@ -1441,15 +1472,32 @@ function renderLogin(app){
     </div>`;
 }
 
+function animateLoginResult(type, message){
+  const card = document.getElementById('loginCard');
+  const status = document.getElementById('loginStatus');
+  if (!card || !status) return;
+  card.classList.remove('login-error','login-success');
+  void card.offsetWidth;
+  card.classList.add(type === 'success' ? 'login-success' : 'login-error');
+  status.className = `login-status show ${type}`;
+  status.innerHTML = `${iconHTML(type === 'success' ? 'checkSquare' : 'x')} ${message}`;
+}
+
 async function doLogin(){
   const mobile = document.getElementById('loginMobile').value.trim();
   const pin = document.getElementById('loginPin').value.trim();
   const rememberMe = document.getElementById('rememberMe').checked;
-  if (!mobile || !pin){ state.error='Enter mobile number and PIN.'; render(); return; }
+  if (!mobile || !pin){
+    state.error='Enter phone number and password.';
+    animateLoginResult('error', state.error);
+    return;
+  }
   const btn = document.getElementById('loginBtn');
   btn.disabled = true; btn.textContent = 'Checking...';
   try{
     const session = await loginUser(mobile, pin);
+    animateLoginResult('success', 'Details correct. Opening...');
+    await new Promise(resolve=>setTimeout(resolve, 520));
     state.session = session;
     if (rememberMe) saveSession(session); else clearSession();
     if (session.role === 'mainAdmin'){
@@ -1473,7 +1521,7 @@ async function doLogin(){
       listenMeetings(session.businessId);
       listenLeaves(session.businessId, session.staffId);
       listenApps(session.businessId);
-      startLiveLocationTracking();
+      startLiveLocationIfEnabled();
       listenLocationRequests(session.businessId, session.staffId);
       requestNotificationPermission();
       setupPushNotifications();
@@ -1485,11 +1533,13 @@ async function doLogin(){
       } else {
         state.pendingAttendBiz = null;
         go('staffHome');
+        promptLiveLocationConsentOnce();
       }
     }
   }catch(e){
     state.error = e.message;
-    render();
+    btn.disabled = false; btn.textContent = 'Continue';
+    animateLoginResult('error', state.error || 'Incorrect user details.');
   }
 }
 
@@ -1835,9 +1885,11 @@ function renderProfile(app){
         <div class="card">
           <div class="section-title">${iconHTML('pin')} Live Location</div>
           <div class="staff-sub" style="margin-bottom:14px;">
-            ${hasLiveLocationPermissionSaved() ? 'Live location is enabled on this device while the app is open.' : 'Enable once on this device so admin can see live location while the app is open.'}
+            ${hasLiveLocationPermissionSaved()
+              ? 'One-time setup is complete. Admin can see your last saved location anytime.'
+              : (hasLiveLocationConsentBeenAsked() ? 'Location setup is not enabled. You can allow it here anytime.' : 'Enable once on this device so admin can see your last saved location anytime.')}
           </div>
-          <button class="btn btn-outline" onclick="enableLiveLocationSetup()">${iconHTML('pin')}${hasLiveLocationPermissionSaved() ? 'Refresh Location' : 'Enable Live Location'}</button>
+          <button class="btn btn-outline" onclick="enableLiveLocationSetup()">${iconHTML('pin')}${hasLiveLocationPermissionSaved() ? 'Live Location Enabled' : 'Enable Live Location'}</button>
         </div>
       ` : ''}
 
@@ -1917,7 +1969,7 @@ async function removeProfilePhoto(){
 function enableLiveLocationSetup(){
   startLiveLocationTracking();
   pushLiveLocation();
-  toast('Live location setup started. Allow location if your browser asks.');
+  toast('One-time live location setup started. Allow location if your browser asks.');
 }
 
 async function doChangeProfilePin(){
@@ -2682,10 +2734,53 @@ function hasLiveLocationPermissionSaved(){
   try{ return localStorage.getItem(key) === 'enabled'; }catch(e){ return false; }
 }
 
+function liveLocationConsentStatus(){
+  const key = liveLocationPermissionKey();
+  if (!key) return '';
+  try{ return localStorage.getItem(key) || ''; }catch(e){ return ''; }
+}
+
+function hasLiveLocationConsentBeenAsked(){
+  const status = liveLocationConsentStatus();
+  return status === 'enabled' || status === 'asked';
+}
+
+function markLiveLocationConsentAsked(){
+  const key = liveLocationPermissionKey();
+  if (!key || hasLiveLocationPermissionSaved()) return;
+  try{ localStorage.setItem(key, 'asked'); }catch(e){}
+}
+
 function saveLiveLocationPermission(){
   const key = liveLocationPermissionKey();
   if (!key) return;
   try{ localStorage.setItem(key, 'enabled'); }catch(e){}
+}
+
+function startLiveLocationIfEnabled(){
+  if (hasLiveLocationPermissionSaved()) startLiveLocationTracking();
+}
+
+function promptLiveLocationConsentOnce(){
+  if (!state.session || state.session.role !== 'staff') return;
+  if (hasLiveLocationPermissionSaved()){
+    startLiveLocationTracking();
+    return;
+  }
+  if (hasLiveLocationConsentBeenAsked()) return;
+  setTimeout(()=>{
+    if (!state.session || state.session.role !== 'staff' || hasLiveLocationConsentBeenAsked()) return;
+    const ok = window.confirm('Your admin can see your live location while this app is open, and your last saved location later. Allow one-time location setup?');
+    markLiveLocationConsentAsked();
+    if (ok){
+      startLiveLocationTracking();
+      pushLiveLocation();
+      toast('Location setup started. Allow location if your browser asks.');
+    } else {
+      toast('Location setup skipped. You can enable it later from Profile.');
+      if (state.screen === 'profile') render();
+    }
+  }, 450);
 }
 
 function startLiveLocationTracking(){
@@ -2714,9 +2809,6 @@ function stopLiveLocationTracking(){
   if (liveLocationWatchId != null && navigator.geolocation) navigator.geolocation.clearWatch(liveLocationWatchId);
   liveLocationInterval = null;
   liveLocationWatchId = null;
-  if (state.session && state.session.role==='staff'){
-    clearLiveLocation(state.session.businessId, state.session.staffId).catch(()=>{});
-  }
 }
 
 function getTodayInOut(staffAttendance){
@@ -3140,52 +3232,56 @@ function timeAgo(ts){
 
 let liveMapInstance = null;
 function renderAdminLiveMap(app){
-  const liveStaffIds = new Set(state.liveLocations.map(l=>l.staffId));
-  const offlineStaff = state.staffList.filter(s=>!liveStaffIds.has(s.id));
+  const locationByStaffId = {};
+  state.liveLocations.forEach(l=>{ locationByStaffId[l.staffId] = l; });
+  const staffWithLocation = state.staffList
+    .map(s=>({ staff:s, location:locationByStaffId[s.id] }))
+    .filter(x=>x.location);
+  const staffWithoutLocation = state.staffList.filter(s=>!locationByStaffId[s.id]);
   app.innerHTML = `
-    ${topbar('Team','Live Location','Tap Refresh for an instant update, anytime')}
+    ${topbar('Team','Staff Location','Last known location is always visible')}
     <div class="screen">
       <div class="card">
-        <div class="staff-sub">Location updates automatically every 5 min while a staff member has the app open. Tap "Refresh Now" on any staff member to get their exact current location immediately.</div>
+        <div class="staff-sub">Staff only needs one-time location setup. After that, location updates automatically while the staff app is open, and admin always sees the last saved location.</div>
       </div>
       <div class="card" style="padding:10px;">
         <div id="liveMapContainer" style="height:280px; border-radius:20px; overflow:hidden;"></div>
       </div>
       <div class="card">
         <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:10px;">
-          <h3 style="margin:0; font-size:15px;">Live Now</h3>
-          ${state.liveLocations.length ? `<button class="link" onclick="doRefreshAllLocations()">${iconHTML('refresh')} Refresh All</button>` : ''}
+          <h3 style="margin:0; font-size:15px;">All Staff Locations</h3>
         </div>
-        ${state.liveLocations.length===0 ? `<div class="list-empty-note">No staff currently sharing location.</div>` :
-          state.liveLocations.map(l=>{
-            const s = state.staffList.find(x=>x.id===l.staffId) || {};
+        ${staffWithLocation.length===0 ? `<div class="list-empty-note">No staff location saved yet.</div>` :
+          staffWithLocation.map(({staff:s, location:l})=>{
+            const isActive = Date.now() - (l.updatedAt || 0) <= 10 * 60 * 1000;
             return `
               <div class="attendance-item">
                 <div class="row-flex">
                   ${avatarHTML(s.name || l.staffName, s.profilePhoto)}
                   <div>
                     <div class="staff-name" style="font-size:14px;">${escapeHTML(s.name || l.staffName)}</div>
-                    <div class="staff-sub">Updated ${timeAgo(l.updatedAt)}</div>
+                    <div class="staff-sub">${isActive ? 'Active now' : 'Last seen'} · ${timeAgo(l.updatedAt)}</div>
                   </div>
                 </div>
                 <div class="att-right" style="gap:6px;">
+                  <span class="badge ${isActive ? 'badge-in' : 'badge-pending'}">${isActive ? 'Active' : 'Saved'}</span>
                   <a class="link" href="https://www.google.com/maps?q=${l.lat},${l.lng}" target="_blank" rel="noopener">View on Map ›</a>
-                  <button class="link" onclick="doRequestLocation('${l.staffId}')">${iconHTML('refresh')} Refresh Now</button>
                 </div>
               </div>
             `;
           }).join('')}
       </div>
-      ${offlineStaff.length ? `
+      ${staffWithoutLocation.length ? `
         <div class="card">
-          <h3 style="margin:0 0 10px; font-size:15px;">Offline</h3>
-          ${offlineStaff.map(s=>`
+          <h3 style="margin:0 0 10px; font-size:15px;">No Location Yet</h3>
+          <div class="staff-sub" style="margin-bottom:10px;">Ask staff to open Profile and tap Enable Live Location once.</div>
+          ${staffWithoutLocation.map(s=>`
             <div class="attendance-item">
               <div class="row-flex">
                 ${avatarHTML(s.name, s.profilePhoto)}
                 <div class="staff-name" style="font-size:14px;">${escapeHTML(s.name || 'Staff')}</div>
               </div>
-              <button class="link" onclick="doRequestLocation('${s.id}')">${iconHTML('refresh')} Request Location</button>
+              <span class="badge badge-pending">Pending</span>
             </div>
           `).join('')}
         </div>
@@ -3201,13 +3297,13 @@ function renderAdminLiveMap(app){
     liveMapInstance = L.map('liveMapContainer', { zoomControl:true, attributionControl:false });
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(liveMapInstance);
 
-    if (state.liveLocations.length === 0){
+    if (staffWithLocation.length === 0){
       liveMapInstance.setView([10.05, 76.35], 12); // fallback: Kerala-ish default view
     } else {
       const bounds = [];
-      state.liveLocations.forEach(l=>{
+      staffWithLocation.forEach(({staff:s, location:l})=>{
         const marker = L.marker([l.lat, l.lng]).addTo(liveMapInstance);
-        marker.bindPopup(`<b>${l.staffName}</b><br>Updated ${timeAgo(l.updatedAt)}`);
+        marker.bindPopup(`<b>${escapeHTML(s.name || l.staffName)}</b><br>Last updated ${timeAgo(l.updatedAt)}`);
         bounds.push([l.lat, l.lng]);
       });
       if (bounds.length === 1) liveMapInstance.setView(bounds[0], 15);
@@ -3215,16 +3311,6 @@ function renderAdminLiveMap(app){
     }
   }, 0);
 }
-
-async function doRequestLocation(staffId){
-  await requestLocationNow(state.session.businessId, staffId);
-  toast('Location refresh requested — updates in a few seconds');
-}
-async function doRefreshAllLocations(){
-  await Promise.all(state.liveLocations.map(l=>requestLocationNow(state.session.businessId, l.staffId)));
-  toast('Refreshing all staff locations...');
-}
-
 
 function escapeHTML(str){
   return String(str || '').replace(/[&<>"']/g, ch=>({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[ch]));
