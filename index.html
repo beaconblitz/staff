@@ -544,6 +544,11 @@ function themedTileBg(lightBg){
   return map[String(lightBg || '').toUpperCase()] || '#2B2550';
 }
 
+function avatarHTML(name, photo){
+  const fallback = escapeHTML((name || '?')[0].toUpperCase());
+  return `<div class="avatar">${photo ? `<img src="${photo}" alt="${escapeHTML(name || 'Profile')}">` : fallback}</div>`;
+}
+
 /* ---------------------------------------------------------
    APP STATE
    --------------------------------------------------------- */
@@ -558,6 +563,7 @@ const state = {
   complaints: [],
   apps: [],
   liveLocations: [],
+  allBusinesses: [],
   staffListenerRef: null,
   attendanceListenerRef: null,
   meetingsListenerRef: null,
@@ -565,6 +571,7 @@ const state = {
   complaintsListenerRef: null,
   appsListenerRef: null,
   liveLocationsListenerRef: null,
+  allBusinessesListenerRef: null,
   locationRequestListenerRef: null,
   chatListenerRef: null,
   allChatsListenerRef: null,
@@ -581,6 +588,8 @@ const state = {
   error: '',
   lastPunchType: 'in',
   pendingAttendBiz: null,
+  selectedBusinessId: '',
+  lastLiveLocation: null,
   report: { staffId: 'all', range: 'today', empType: 'all' }
 };
 
@@ -648,6 +657,13 @@ async function registerBusiness(data){
 }
 
 async function loginUser(mobile, pin){
+  const mainAdminSnap = await db.ref('mainAdmins/' + mobile).once('value');
+  if (mainAdminSnap.exists()){
+    const mainAdmin = mainAdminSnap.val() || {};
+    if (mainAdmin.pin !== pin) throw new Error('Incorrect PIN.');
+    return { role:'mainAdmin', mobile, name: mainAdmin.name || 'Main Admin' };
+  }
+
   const idxSnap = await db.ref('mobileIndex/' + mobile).once('value');
   if (!idxSnap.exists()) throw new Error("We couldn't find an account with that mobile number.");
   const idx = idxSnap.val();
@@ -668,6 +684,20 @@ async function loginUser(mobile, pin){
 }
 
 async function getProfileDetails(session){
+  if (session.role === 'mainAdmin'){
+    const snap = await db.ref('mainAdmins/' + session.mobile).once('value');
+    const admin = snap.val() || {};
+    return {
+      role: 'Main Admin',
+      name: admin.name || session.name,
+      businessName: 'All businesses',
+      mobile: session.mobile || '',
+      sector: 'Full access',
+      photo: admin.profilePhoto || '',
+      pin: admin.pin || ''
+    };
+  }
+
   if (session.role === 'admin'){
     const bizSnap = await db.ref('businesses/' + session.businessId).once('value');
     const biz = bizSnap.val() || {};
@@ -701,7 +731,9 @@ async function getProfileDetails(session){
 }
 
 async function updateProfilePin(session, newPin){
-  if (session.role === 'admin'){
+  if (session.role === 'mainAdmin'){
+    await db.ref('mainAdmins/' + session.mobile).update({ pin: newPin });
+  } else if (session.role === 'admin'){
     await db.ref('businesses/' + session.businessId).update({ pin: newPin });
   } else {
     await db.ref('businesses/' + session.businessId + '/staff/' + session.staffId).update({ pin: newPin });
@@ -709,7 +741,9 @@ async function updateProfilePin(session, newPin){
 }
 
 async function updateProfilePhoto(session, photoData){
-  if (session.role === 'admin'){
+  if (session.role === 'mainAdmin'){
+    await db.ref('mainAdmins/' + session.mobile).update({ profilePhoto: photoData || null });
+  } else if (session.role === 'admin'){
     await db.ref('businesses/' + session.businessId).update({ profilePhoto: photoData || null });
   } else {
     await db.ref('businesses/' + session.businessId + '/staff/' + session.staffId).update({ profilePhoto: photoData || null });
@@ -781,6 +815,24 @@ function listenStaff(businessId){
     const val = snap.val() || {};
     state.staffList = Object.keys(val).map(id=>({ id, ...val[id] }));
     if (['adminStaff','adminHome','adminAttendance'].includes(state.screen)) render();
+  });
+}
+
+function listenAllBusinesses(){
+  if (state.allBusinessesListenerRef) state.allBusinessesListenerRef.off();
+  const ref = db.ref('businesses');
+  state.allBusinessesListenerRef = ref;
+  ref.on('value', snap=>{
+    const val = snap.val() || {};
+    state.allBusinesses = Object.keys(val).map(id=>{
+      const biz = val[id] || {};
+      const staff = biz.staff || {};
+      const attendance = biz.attendance || {};
+      const todayStr = new Date().toDateString();
+      const todayIn = Object.values(attendance).filter(a=> a && a.ts && new Date(a.ts).toDateString()===todayStr && a.type==='in').length;
+      return { id, ...biz, staffCount:Object.keys(staff).length, todayIn };
+    }).sort((a,b)=>(b.createdAt||0)-(a.createdAt||0));
+    if (['mainAdminHome','mainBusinessDetails'].includes(state.screen)) render();
   });
 }
 
@@ -946,7 +998,7 @@ async function clearNotice(businessId){
   await db.ref('businesses/' + businessId + '/notice').remove();
 }
 
-/* ---- Live Location (only while staff is on an active shift) ---- */
+/* ---- Live Location (full-time while the staff app is open) ---- */
 function listenLiveLocations(businessId){
   if (state.liveLocationsListenerRef) state.liveLocationsListenerRef.off();
   const ref = db.ref('businesses/' + businessId + '/liveLocations');
@@ -1156,7 +1208,9 @@ async function bootstrap(){
 
   if (existing){
     state.session = existing;
-    if (existing.role === 'admin'){
+    if (existing.role === 'mainAdmin'){
+      listenAllBusinesses();
+    } else if (existing.role === 'admin'){
       listenStaff(existing.businessId);
       listenAttendance(existing.businessId, null);
       listenMeetings(existing.businessId);
@@ -1202,7 +1256,7 @@ async function bootstrap(){
   }
 
   if (existing){
-    go(existing.role === 'admin' ? 'adminHome' : 'staffHome');
+    go(existing.role === 'mainAdmin' ? 'mainAdminHome' : (existing.role === 'admin' ? 'adminHome' : 'staffHome'));
   } else {
     go('landing');
   }
@@ -1217,8 +1271,19 @@ async function prepareConfirm(businessId, staffId, staffName, adminMobile){
       return;
     }
     const suggested = status.hasIn ? 'out' : 'in';
+    if (state.lastLiveLocation && Date.now() - state.lastLiveLocation.ts < 10 * 60 * 1000){
+      state.pendingPunch = {
+        businessId, staffId, staffName, adminMobile,
+        type: suggested, lat: state.lastLiveLocation.lat, lng: state.lastLiveLocation.lng,
+        lockedType: status.hasIn ? 'out' : (status.hasOut ? 'in' : null)
+      };
+      go('confirmPunch');
+      return;
+    }
     navigator.geolocation.getCurrentPosition((pos)=>{
       const { latitude, longitude } = pos.coords;
+      state.lastLiveLocation = { lat: latitude, lng: longitude, ts: Date.now() };
+      saveLiveLocationPermission();
       state.pendingPunch = {
         businessId, staffId, staffName, adminMobile,
         type: suggested, lat: latitude, lng: longitude,
@@ -1267,6 +1332,8 @@ function render(){
     landing: renderLanding,
     login: renderLogin,
     registerBiz: renderRegisterBiz,
+    mainAdminHome: renderMainAdminHome,
+    mainBusinessDetails: renderMainBusinessDetails,
     adminHome: renderAdminHome,
     adminStaff: renderAdminStaff,
     addStaff: renderAddStaff,
@@ -1372,7 +1439,10 @@ async function doLogin(){
     const session = await loginUser(mobile, pin);
     state.session = session;
     if (rememberMe) saveSession(session); else clearSession();
-    if (session.role === 'admin'){
+    if (session.role === 'mainAdmin'){
+      listenAllBusinesses();
+      go('mainAdminHome');
+    } else if (session.role === 'admin'){
       listenStaff(session.businessId);
       listenAttendance(session.businessId, null);
       listenMeetings(session.businessId);
@@ -1475,6 +1545,120 @@ async function doRegister(){
   }
 }
 
+function mainAdminNav(active){
+  return `<div class="bottom-nav">
+    <button class="${active==='mainAdminHome'?'active':''}" onclick="go('mainAdminHome')"><span class="icon">${iconHTML('briefcase')}</span>Business</button>
+    <button class="${active==='profile'?'active':''}" onclick="go('profile')"><span class="icon">${iconHTML('menu')}</span>Profile</button>
+  </div>`;
+}
+
+function renderMainAdminHome(app){
+  const totalStaff = state.allBusinesses.reduce((sum,b)=>sum + (b.staffCount || 0), 0);
+  const todayIn = state.allBusinesses.reduce((sum,b)=>sum + (b.todayIn || 0), 0);
+  app.innerHTML = `
+    ${topbar('Main Admin','All Businesses', `Welcome, ${state.session.name}`)}
+    <div class="screen">
+      <div class="stat-row">
+        <div class="stat"><div class="num">${state.allBusinesses.length}</div><div class="lbl">Businesses</div></div>
+        <div class="stat"><div class="num">${totalStaff}</div><div class="lbl">Staff</div></div>
+        <div class="stat"><div class="num">${todayIn}</div><div class="lbl">Today In</div></div>
+      </div>
+      <div class="card">
+        ${state.allBusinesses.length===0 ? `<div class="empty">No businesses found.</div>` :
+          state.allBusinesses.map(b=>`
+            <div class="attendance-item" style="cursor:pointer;" onclick="openMainBusiness('${b.id}')">
+              <div class="row-flex">
+                ${avatarHTML(b.adminName || b.name, b.profilePhoto)}
+                <div>
+                  <div class="staff-name" style="font-size:14px;">${escapeHTML(b.name || 'Business')}</div>
+                  <div class="staff-sub">${escapeHTML(b.adminName || 'Admin')} · ${escapeHTML(b.mobile || '')}</div>
+                </div>
+              </div>
+              <div class="att-right">
+                <span class="badge badge-pending">${b.staffCount || 0} Staff</span>
+                <span class="staff-sub">${b.todayIn || 0} in today</span>
+              </div>
+            </div>
+          `).join('')}
+      </div>
+    </div>
+    ${mainAdminNav('mainAdminHome')}
+  `;
+}
+
+function openMainBusiness(businessId){
+  state.selectedBusinessId = businessId;
+  go('mainBusinessDetails');
+}
+
+function renderMainBusinessDetails(app){
+  const b = state.allBusinesses.find(x=>x.id===state.selectedBusinessId);
+  if (!b){ go('mainAdminHome'); return; }
+  const staff = Object.keys(b.staff || {}).map(id=>({ id, ...b.staff[id] }));
+  const attendance = Object.keys(b.attendance || {}).map(id=>({ id, ...b.attendance[id] })).sort((a,b)=>(b.ts||0)-(a.ts||0));
+  app.innerHTML = `
+    ${topbar('Business Details', b.name || 'Business', b.adminName || '')}
+    <div class="screen">
+      <div class="card">
+        <div class="attendance-item">
+          <div class="row-flex">
+            ${avatarHTML(b.adminName || 'Admin', b.profilePhoto)}
+            <div><div class="staff-sub">Admin</div><div class="staff-name" style="font-size:14px;">${escapeHTML(b.adminName || 'Not set')}</div></div>
+          </div>
+          <span style="color:var(--indigo);">${iconHTML('user')}</span>
+        </div>
+        <div class="attendance-item">
+          <div class="att-left"><div class="staff-sub">Mobile</div><div class="staff-name" style="font-size:14px;">${escapeHTML(b.mobile || 'Not set')}</div></div>
+          <span style="color:var(--indigo);">${iconHTML('phone')}</span>
+        </div>
+        <div class="attendance-item">
+          <div class="att-left"><div class="staff-sub">Sector</div><div class="staff-name" style="font-size:14px;">${escapeHTML(b.sector || 'Not set')}</div></div>
+          <span style="color:var(--indigo);">${iconHTML('briefcase')}</span>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="section-title">Staff</div>
+        ${staff.length===0 ? `<div class="empty">No staff added.</div>` :
+          staff.map(s=>`
+            <div class="staff-row">
+              <div class="row-flex">
+                ${avatarHTML(s.name, s.profilePhoto)}
+                <div>
+                  <div class="staff-name">${escapeHTML(s.name || 'Staff')}</div>
+                  <div class="staff-sub">${escapeHTML(s.mobile || '')} · ${escapeHTML(s.designation || '')}</div>
+                </div>
+              </div>
+            </div>
+          `).join('')}
+      </div>
+
+      <div class="card">
+        <div class="section-title">Recent Attendance</div>
+        ${attendance.slice(0,12).length===0 ? `<div class="empty">No attendance yet.</div>` :
+          attendance.slice(0,12).map(a=>{
+            const s = staff.find(x=>x.id===a.staffId) || {};
+            return `
+              <div class="attendance-item">
+                <div class="row-flex">
+                  ${avatarHTML(s.name || a.staffName, s.profilePhoto)}
+                  <div>
+                    <div class="staff-name" style="font-size:14px;">${escapeHTML(s.name || a.staffName || 'Staff')}</div>
+                    <div class="staff-sub mono">${fmtDateLabel(a.ts)} · ${fmtTime(a.ts)}</div>
+                  </div>
+                </div>
+                <span class="badge ${a.type==='in'?'badge-in':'badge-out'}">${a.type==='in'?'Check In':'Check Out'}</span>
+              </div>
+            `;
+          }).join('')}
+      </div>
+
+      <button class="btn btn-ghost" onclick="go('mainAdminHome')">${iconHTML('arrowLeft')}Back</button>
+    </div>
+    ${mainAdminNav('mainAdminHome')}
+  `;
+}
+
 function renderAdminHome(app){
   const businessId = state.session.businessId;
   const qrUrl = window.location.origin + window.location.pathname + '?attend=' + businessId;
@@ -1550,6 +1734,7 @@ function doLogout(){
   if (state.staffListenerRef) state.staffListenerRef.off();
   if (state.attendanceListenerRef) state.attendanceListenerRef.off();
   if (state.liveLocationsListenerRef) state.liveLocationsListenerRef.off();
+  if (state.allBusinessesListenerRef) state.allBusinessesListenerRef.off();
   if (state.locationRequestListenerRef) state.locationRequestListenerRef.off();
   if (state.chatListenerRef) state.chatListenerRef.off();
   if (state.allChatsListenerRef) state.allChatsListenerRef.off();
@@ -1559,13 +1744,20 @@ function doLogout(){
   state.session = null;
   state.profileDetails = null;
   state.profileLoadedFor = '';
+  state.allBusinesses = [];
+  state.selectedBusinessId = '';
   clearSession();
   go('landing');
 }
 
 function profileLoadKey(){
   if (!state.session) return '';
+  if (state.session.role === 'mainAdmin') return `mainAdmin:${state.session.mobile}`;
   return `${state.session.role}:${state.session.businessId}:${state.session.staffId || 'admin'}`;
+}
+
+function accountNav(active){
+  return state.session && state.session.role === 'mainAdmin' ? mainAdminNav(active) : bottomNav(active);
 }
 
 async function loadProfileDetails(){
@@ -1584,7 +1776,7 @@ async function loadProfileDetails(){
 function renderProfile(app){
   const key = profileLoadKey();
   if (!state.profileDetails || state.profileLoadedFor !== key){
-    app.innerHTML = `${topbar('Account','Profile','Manage your account')}<div class="spinner-box">Loading profile...</div>${bottomNav('profile')}`;
+    app.innerHTML = `${topbar('Account','Profile','Manage your account')}<div class="spinner-box">Loading profile...</div>${accountNav('profile')}`;
     loadProfileDetails();
     return;
   }
@@ -1593,7 +1785,7 @@ function renderProfile(app){
     ? `<img src="${d.photo}" alt="Profile picture">`
     : escapeHTML((d.name || '?')[0].toUpperCase());
   app.innerHTML = `
-    ${topbar('Account','Profile', state.session.businessName)}
+    ${topbar('Account','Profile', d.businessName || state.session.businessName || '')}
     <div class="screen">
       <div class="card">
         <div class="row-flex" style="gap:14px; align-items:center; margin-bottom:18px;">
@@ -1626,6 +1818,16 @@ function renderProfile(app){
         </div>
       </div>
 
+      ${state.session.role === 'staff' ? `
+        <div class="card">
+          <div class="section-title">${iconHTML('pin')} Live Location</div>
+          <div class="staff-sub" style="margin-bottom:14px;">
+            ${hasLiveLocationPermissionSaved() ? 'Live location is enabled on this device while the app is open.' : 'Enable once on this device so admin can see live location while the app is open.'}
+          </div>
+          <button class="btn btn-outline" onclick="enableLiveLocationSetup()">${iconHTML('pin')}${hasLiveLocationPermissionSaved() ? 'Refresh Location' : 'Enable Live Location'}</button>
+        </div>
+      ` : ''}
+
       <div class="card">
         <div class="section-title">${iconHTML('key')} Change Password</div>
         <div class="staff-sub" style="margin-bottom:14px;">Use a new PIN for your next login.</div>
@@ -1641,7 +1843,7 @@ function renderProfile(app){
 
       <button class="btn btn-outline" style="color:var(--danger);" onclick="confirmLogout()">${iconHTML('logout')}Logout</button>
     </div>
-    ${bottomNav('profile')}
+    ${accountNav('profile')}
   `;
 }
 
@@ -1699,6 +1901,12 @@ async function removeProfilePhoto(){
   }
 }
 
+function enableLiveLocationSetup(){
+  startLiveLocationTracking();
+  pushLiveLocation();
+  toast('Live location setup started. Allow location if your browser asks.');
+}
+
 async function doChangeProfilePin(){
   const currentPin = document.getElementById('currentPin').value.trim();
   const newPin = document.getElementById('newPin').value.trim();
@@ -1740,7 +1948,7 @@ function renderAdminStaff(app){
           filtered.map(s=>`
             <div class="staff-row" style="cursor:pointer;" onclick="openEditStaff('${s.id}')">
               <div class="row-flex">
-                <div class="avatar">${(s.name||'?')[0].toUpperCase()}</div>
+                ${avatarHTML(s.name, s.profilePhoto)}
                 <div>
                   <div class="staff-name">${s.name}</div>
                   <div class="staff-sub">${s.designation || 'Staff'} · ${s.mobile} · ${s.employmentType==='part' ? 'Part Time' : 'Full Time'}</div>
@@ -2197,12 +2405,17 @@ function renderAdminAttendance(app){
           dateKeys.map(dk=>{
             const items = groups[dk].sort((a,b)=>(b.ts||0)-(a.ts||0));
             return `<div class="date-group-label">${fmtDateLabel(items[0].ts)}</div>` +
-              items.map(a=>`
+              items.map(a=>{
+                const s = state.staffList.find(x=>x.id===a.staffId) || {};
+                return `
                 <div class="attendance-item" style="cursor:pointer;" onclick="openEditAttendance('${a.id}')">
-                  <div class="att-left">
-                    <div class="staff-name" style="font-size:14px;">${state.report.staffId==='all' ? a.staffName : fmtTime(a.ts)}</div>
-                    ${state.report.staffId==='all' ? `<div class="staff-sub mono">${fmtTime(a.ts)}</div>` : ''}
-                    ${a.manual ? `<div class="staff-sub" style="color:var(--marigold);">Manually added</div>` : ''}
+                  <div class="row-flex">
+                    ${state.report.staffId==='all' ? avatarHTML(s.name || a.staffName, s.profilePhoto) : ''}
+                    <div>
+                      <div class="staff-name" style="font-size:14px;">${state.report.staffId==='all' ? escapeHTML(s.name || a.staffName) : fmtTime(a.ts)}</div>
+                      ${state.report.staffId==='all' ? `<div class="staff-sub mono">${fmtTime(a.ts)}</div>` : ''}
+                      ${a.manual ? `<div class="staff-sub" style="color:var(--marigold);">Manually added</div>` : ''}
+                    </div>
                   </div>
                   <div class="att-right">
                     <span class="badge ${a.type==='in'?'badge-in':'badge-out'}">${a.type==='in'?'Check In':'Check Out'}</span>
@@ -2213,7 +2426,8 @@ function renderAdminAttendance(app){
                     </div>
                   </div>
                 </div>
-              `).join('');
+              `;
+              }).join('');
           }).join('')}
       </div>
     </div>
@@ -2425,6 +2639,7 @@ const LIVE_LOCATION_INTERVAL_MS = 5 * 60 * 1000;
 let autoCheckoutTimeout = null;
 let shiftCountdownInterval = null;
 let liveLocationInterval = null;
+let liveLocationWatchId = null;
 
 function clearShiftTimers(){
   if (autoCheckoutTimeout) clearTimeout(autoCheckoutTimeout);
@@ -2435,19 +2650,57 @@ function clearShiftTimers(){
 function pushLiveLocation(){
   if (!state.session || state.session.role !== 'staff') return;
   navigator.geolocation.getCurrentPosition((pos)=>{
-    updateLiveLocation(state.session.businessId, state.session.staffId, state.session.name, pos.coords.latitude, pos.coords.longitude).catch(()=>{});
-  }, ()=>{}, { enableHighAccuracy:true, timeout:10000 });
+    const { latitude, longitude } = pos.coords;
+    state.lastLiveLocation = { lat: latitude, lng: longitude, ts: Date.now() };
+    saveLiveLocationPermission();
+    updateLiveLocation(state.session.businessId, state.session.staffId, state.session.name, latitude, longitude).catch(()=>{});
+  }, ()=>{}, { enableHighAccuracy:true, timeout:10000, maximumAge:60000 });
+}
+
+function liveLocationPermissionKey(){
+  return state.session && state.session.role === 'staff'
+    ? `bbLiveLocation:${state.session.businessId}:${state.session.staffId}`
+    : '';
+}
+
+function hasLiveLocationPermissionSaved(){
+  const key = liveLocationPermissionKey();
+  if (!key) return false;
+  try{ return localStorage.getItem(key) === 'enabled'; }catch(e){ return false; }
+}
+
+function saveLiveLocationPermission(){
+  const key = liveLocationPermissionKey();
+  if (!key) return;
+  try{ localStorage.setItem(key, 'enabled'); }catch(e){}
 }
 
 function startLiveLocationTracking(){
-  if (liveLocationInterval) return; // already running
-  pushLiveLocation();
-  liveLocationInterval = setInterval(pushLiveLocation, LIVE_LOCATION_INTERVAL_MS);
+  if (!state.session || state.session.role !== 'staff' || !navigator.geolocation) return;
+  if (liveLocationWatchId == null){
+    liveLocationWatchId = navigator.geolocation.watchPosition((pos)=>{
+      const { latitude, longitude } = pos.coords;
+      state.lastLiveLocation = { lat: latitude, lng: longitude, ts: Date.now() };
+      saveLiveLocationPermission();
+      updateLiveLocation(state.session.businessId, state.session.staffId, state.session.name, latitude, longitude).catch(()=>{});
+      if (state.screen === 'staffHome' || state.screen === 'profile') render();
+    }, ()=>{
+      if (!hasLiveLocationPermissionSaved() && state.screen === 'staffHome'){
+        toast('Allow location once to enable live tracking.');
+      }
+    }, { enableHighAccuracy:true, maximumAge:60000, timeout:15000 });
+  }
+  if (!liveLocationInterval){
+    pushLiveLocation();
+    liveLocationInterval = setInterval(pushLiveLocation, LIVE_LOCATION_INTERVAL_MS);
+  }
 }
 
 function stopLiveLocationTracking(){
   if (liveLocationInterval) clearInterval(liveLocationInterval);
+  if (liveLocationWatchId != null && navigator.geolocation) navigator.geolocation.clearWatch(liveLocationWatchId);
   liveLocationInterval = null;
+  liveLocationWatchId = null;
   if (state.session && state.session.role==='staff'){
     clearLiveLocation(state.session.businessId, state.session.staffId).catch(()=>{});
   }
@@ -2751,11 +3004,16 @@ function renderAdminLeaves(app){
     <div class="screen">
       <div class="card">
         ${state.leaves.length===0 ? `<div class="empty">No leave requests yet.</div>` :
-          state.leaves.map(l=>`
+          state.leaves.map(l=>{
+            const s = state.staffList.find(x=>x.id===l.staffId) || {};
+            return `
             <div class="attendance-item">
-              <div class="att-left">
-                <div class="staff-name" style="font-size:14px;">${l.staffName}</div>
-                <div class="staff-sub">${l.fromDate}${l.toDate && l.toDate!==l.fromDate ? ' → '+l.toDate : ''} · ${l.reason||''}</div>
+              <div class="row-flex">
+                ${avatarHTML(s.name || l.staffName, s.profilePhoto)}
+                <div>
+                  <div class="staff-name" style="font-size:14px;">${escapeHTML(s.name || l.staffName)}</div>
+                  <div class="staff-sub">${l.fromDate}${l.toDate && l.toDate!==l.fromDate ? ' → '+l.toDate : ''} · ${escapeHTML(l.reason||'')}</div>
+                </div>
               </div>
               <div class="att-right">
                 ${l.status==='pending' ? `
@@ -2766,7 +3024,8 @@ function renderAdminLeaves(app){
                 ` : `<span class="badge ${l.status==='approved'?'badge-in':'badge-out'}">${l.status}</span>`}
               </div>
             </div>
-          `).join('')}
+          `;
+          }).join('')}
       </div>
     </div>
     ${bottomNav('adminHome')}
@@ -2784,15 +3043,21 @@ function renderAdminComplaints(app){
     <div class="screen">
       <div class="card">
         ${state.complaints.length===0 ? `<div class="empty">No complaints yet.</div>` :
-          state.complaints.map(c=>`
+          state.complaints.map(c=>{
+            const s = state.staffList.find(x=>x.id===c.staffId) || {};
+            return `
             <div class="attendance-item">
-              <div class="att-left">
-                <div class="staff-name" style="font-size:14px;">${c.staffName}</div>
-                <div class="staff-sub">${c.message}</div>
+              <div class="row-flex">
+                ${avatarHTML(s.name || c.staffName, s.profilePhoto)}
+                <div>
+                  <div class="staff-name" style="font-size:14px;">${escapeHTML(s.name || c.staffName)}</div>
+                  <div class="staff-sub">${escapeHTML(c.message)}</div>
+                </div>
               </div>
               <span class="staff-sub mono">${fmtDateLabel(c.createdAt)}</span>
             </div>
-          `).join('')}
+          `;
+          }).join('')}
       </div>
     </div>
     ${bottomNav('adminHome')}
@@ -2879,25 +3144,34 @@ function renderAdminLiveMap(app){
           ${state.liveLocations.length ? `<button class="link" onclick="doRefreshAllLocations()">${iconHTML('refresh')} Refresh All</button>` : ''}
         </div>
         ${state.liveLocations.length===0 ? `<div class="list-empty-note">No staff currently sharing location.</div>` :
-          state.liveLocations.map(l=>`
-            <div class="attendance-item">
-              <div class="att-left">
-                <div class="staff-name" style="font-size:14px;">${l.staffName}</div>
-                <div class="staff-sub">Updated ${timeAgo(l.updatedAt)}</div>
+          state.liveLocations.map(l=>{
+            const s = state.staffList.find(x=>x.id===l.staffId) || {};
+            return `
+              <div class="attendance-item">
+                <div class="row-flex">
+                  ${avatarHTML(s.name || l.staffName, s.profilePhoto)}
+                  <div>
+                    <div class="staff-name" style="font-size:14px;">${escapeHTML(s.name || l.staffName)}</div>
+                    <div class="staff-sub">Updated ${timeAgo(l.updatedAt)}</div>
+                  </div>
+                </div>
+                <div class="att-right" style="gap:6px;">
+                  <a class="link" href="https://www.google.com/maps?q=${l.lat},${l.lng}" target="_blank" rel="noopener">View on Map ›</a>
+                  <button class="link" onclick="doRequestLocation('${l.staffId}')">${iconHTML('refresh')} Refresh Now</button>
+                </div>
               </div>
-              <div class="att-right" style="gap:6px;">
-                <a class="link" href="https://www.google.com/maps?q=${l.lat},${l.lng}" target="_blank" rel="noopener">View on Map ›</a>
-                <button class="link" onclick="doRequestLocation('${l.staffId}')">${iconHTML('refresh')} Refresh Now</button>
-              </div>
-            </div>
-          `).join('')}
+            `;
+          }).join('')}
       </div>
       ${offlineStaff.length ? `
         <div class="card">
           <h3 style="margin:0 0 10px; font-size:15px;">Offline</h3>
           ${offlineStaff.map(s=>`
             <div class="attendance-item">
-              <div class="att-left"><div class="staff-name" style="font-size:14px;">${s.name}</div></div>
+              <div class="row-flex">
+                ${avatarHTML(s.name, s.profilePhoto)}
+                <div class="staff-name" style="font-size:14px;">${escapeHTML(s.name || 'Staff')}</div>
+              </div>
               <button class="link" onclick="doRequestLocation('${s.id}')">${iconHTML('refresh')} Request Location</button>
             </div>
           `).join('')}
@@ -2994,7 +3268,7 @@ function renderAdminChatList(app){
             return `
               <div class="chat-list-item" onclick="openAdminChat('${s.id}','${s.name.replace(/'/g,"\\'")}')">
                 <div class="row-flex">
-                  <div class="avatar">${(s.name||'?')[0].toUpperCase()}</div>
+                  ${avatarHTML(s.name, s.profilePhoto)}
                   <div>
                     <div class="staff-name">${s.name}</div>
                     <div class="staff-sub">${last ? (last.text.length>30 ? last.text.slice(0,30)+'…' : last.text) : 'No messages yet'}</div>
