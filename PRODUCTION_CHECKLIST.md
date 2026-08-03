@@ -18,3 +18,9 @@
 - Main admin can set plan, staff limit, trial expiry, subscription expiry, and seller notes.
 - Admin/staff login is blocked when a business is suspended or expired.
 - Adding staff is blocked when the business reaches its plan limit.
+- Main admin can create customer businesses without leaving the owner account.
+- Main admin can reset business admin mobile number and password.
+- Admin can reset staff mobile number and password.
+- Support and Legal screens are available from landing, home, and profile.
+- Attendance reports can be exported as CSV.
+- Business registration requires Terms/Privacy consent.
