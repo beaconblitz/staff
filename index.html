@@ -811,6 +811,7 @@ const state = {
   attendance: [],
   meetings: [],
   leaves: [],
+  correctionRequests: [],
   complaints: [],
   apps: [],
   liveLocations: [],
@@ -820,6 +821,7 @@ const state = {
   attendanceListenerRef: null,
   meetingsListenerRef: null,
   leavesListenerRef: null,
+  correctionRequestsListenerRef: null,
   complaintsListenerRef: null,
   appsListenerRef: null,
   liveLocationsListenerRef: null,
@@ -843,7 +845,8 @@ const state = {
   pendingAttendBiz: null,
   selectedBusinessId: '',
   lastLiveLocation: null,
-  report: { staffId: 'all', range: 'today', empType: 'all' }
+  report: { staffId: 'all', range: 'today', empType: 'all' },
+  salary: { month: new Date().getMonth(), year: new Date().getFullYear(), staffId: null }
 };
 
 const PLAN_CATALOG = {
@@ -962,6 +965,73 @@ function downloadTextFile(filename, text, type){
   setTimeout(()=>URL.revokeObjectURL(url), 500);
 }
 
+function getDeviceId(){
+  const key = 'bb_staff_device_id';
+  try{
+    let id = localStorage.getItem(key);
+    if (!id){
+      id = 'dev_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2,10);
+      localStorage.setItem(key, id);
+    }
+    return id;
+  }catch(e){
+    return 'session_' + Math.random().toString(36).slice(2,10);
+  }
+}
+
+function cleanPhoneForWhatsApp(phone){
+  const digits = String(phone || '').replace(/\D/g, '');
+  if (!digits) return '';
+  if (digits.length === 10) return '91' + digits;
+  return digits;
+}
+
+function openWhatsApp(phone, message){
+  const to = cleanPhoneForWhatsApp(phone);
+  if (!to){ toast('WhatsApp number not set.'); return; }
+  window.open(`https://wa.me/${to}?text=${encodeURIComponent(message)}`, '_blank');
+}
+
+function staffDaySummary(dateObj){
+  const rows = state.staffList.map(staff=>{
+    const status = getDayStatus(staff, dateObj, state.attendance.filter(a=>a.staffId===staff.id));
+    return { staff, ...status };
+  });
+  return {
+    rows,
+    present: rows.filter(r=>r.status==='present').length,
+    late: rows.filter(r=>r.status==='half').length,
+    absent: rows.filter(r=>r.status==='absent').length,
+    pending: rows.filter(r=>r.status==='pending').length
+  };
+}
+
+function weeklyPerformanceSummary(){
+  const days = [];
+  for (let i=6; i>=0; i--){
+    const d = new Date();
+    d.setDate(d.getDate()-i);
+    d.setHours(0,0,0,0);
+    const dayLabel = d.toLocaleDateString('en-IN',{weekday:'short'});
+    const presentIds = new Set(state.attendance.filter(a=>a.type==='in' && a.ts && new Date(a.ts).toDateString()===d.toDateString()).map(a=>a.staffId));
+    days.push({ label: dayLabel, present: presentIds.size });
+  }
+  const staffScores = state.staffList.map(staff=>{
+    const presentDays = new Set(state.attendance.filter(a=>{
+      if (a.staffId !== staff.id || a.type !== 'in' || !a.ts) return false;
+      const d = new Date(a.ts);
+      const start = new Date(); start.setDate(start.getDate()-6); start.setHours(0,0,0,0);
+      return d >= start;
+    }).map(a=>new Date(a.ts).toDateString())).size;
+    return { staff, presentDays };
+  }).sort((a,b)=>b.presentDays-a.presentDays);
+  return { days, staffScores };
+}
+
+function businessFilename(prefix, ext){
+  return `${(state.session?.businessName || 'business').replace(/[^a-z0-9]+/gi,'-').toLowerCase()}-${prefix}.${ext}`;
+}
+
 async function removeExactKvPath(path){
   if (!supabaseClient) return;
   const { error } = await supabaseClient.from('kv_store').delete().eq('path', path);
@@ -1062,6 +1132,9 @@ async function loginUser(mobile, pin){
       name: biz.adminName,
       businessName: biz.name,
       mobile: biz.mobile || mobile,
+      brandColor: biz.brandColor || '#5646C6',
+      profilePhoto: biz.profilePhoto || '',
+      alertWhatsApp: biz.alertWhatsApp || biz.mobile || '',
       plan: biz.plan || DEFAULT_PLAN,
       accountStatus: businessAccountInfo(biz).effectiveStatus,
       staffLimit: businessAccountInfo(biz).staffLimit
@@ -1073,6 +1146,13 @@ async function loginUser(mobile, pin){
     const pinSnap = await db.ref('businesses/' + idx.businessId + '/staff/' + idx.staffId + '/pin').once('value');
     const storedPin = pinSnap.exists() ? pinSnap.val() : staff.pin;
     if (normalizePin(storedPin) !== pin) throw new Error('Incorrect PIN.');
+    const currentDeviceId = getDeviceId();
+    if (staff.deviceId && staff.deviceId !== currentDeviceId){
+      throw new Error('This staff login is locked to another phone. Ask admin to reset device lock.');
+    }
+    if (!staff.deviceId){
+      await db.ref('businesses/' + idx.businessId + '/staff/' + idx.staffId + '/deviceId').set(currentDeviceId);
+    }
     const bizSnap = await db.ref('businesses/' + idx.businessId).once('value');
     const biz = bizSnap.val();
     if (!biz) throw new Error('Business login record is missing. Ask admin to reset this login.');
@@ -1084,6 +1164,7 @@ async function loginUser(mobile, pin){
       name: staff.name,
       businessName: biz.name,
       adminMobile: biz.mobile,
+      alertWhatsApp: biz.alertWhatsApp || biz.mobile || '',
       plan: biz.plan || DEFAULT_PLAN,
       accountStatus: businessAccountInfo(biz).effectiveStatus
     };
@@ -1101,6 +1182,9 @@ async function validateSavedSession(session){
     ...session,
     businessName: biz.name || session.businessName,
     mobile: biz.mobile || session.mobile || '',
+    brandColor: biz.brandColor || session.brandColor || '#5646C6',
+    profilePhoto: biz.profilePhoto || session.profilePhoto || '',
+    alertWhatsApp: biz.alertWhatsApp || session.alertWhatsApp || biz.mobile || '',
     plan: info.plan,
     accountStatus: info.effectiveStatus,
     staffLimit: info.staffLimit
@@ -1132,7 +1216,9 @@ async function getProfileDetails(session){
       mobile: biz.mobile || session.mobile || '',
       sector: biz.sector || '',
       photo: biz.profilePhoto || '',
-      pin: biz.pin || ''
+      pin: biz.pin || '',
+      brandColor: biz.brandColor || '#5646C6',
+      alertWhatsApp: biz.alertWhatsApp || biz.mobile || ''
     };
   }
 
@@ -1285,7 +1371,7 @@ function listenAllBusinesses(){
       const todayIn = Object.values(attendance).filter(a=> a && a.ts && new Date(a.ts).toDateString()===todayStr && a.type==='in').length;
       return { id, ...biz, staffCount:Object.keys(staff).length, todayIn };
     }).sort((a,b)=>(b.createdAt||0)-(a.createdAt||0));
-    if (['mainAdminHome','mainBusinessDetails'].includes(state.screen)) render();
+    if (['mainAdminHome','mainBusinessDetails','mainBackupExport'].includes(state.screen)) render();
   });
 }
 
@@ -1334,6 +1420,9 @@ async function updateBusinessAccount(businessId, data){
     staffLimit: Number(data.staffLimit || PLAN_CATALOG[data.plan || DEFAULT_PLAN].staffLimit),
     trialEndsAt: data.trialEndsAt || null,
     subscriptionEndsAt: data.subscriptionEndsAt || null,
+    billingStatus: data.billingStatus || 'unpaid',
+    billingAmount: data.billingAmount != null && data.billingAmount !== '' ? Number(data.billingAmount) : 0,
+    nextRenewalAt: data.nextRenewalAt || null,
     sellerNotes: data.sellerNotes || '',
     updatedAt: firebase.database.ServerValue.TIMESTAMP
   });
@@ -1364,14 +1453,16 @@ async function updateOwnAdminBusinessDetails(session, data){
   const businessName = String(data.businessName || '').trim();
   const mobile = String(data.mobile || '').trim();
   const pin = String(data.pin || '').trim();
+  const brandColor = String(data.brandColor || '#5646C6').trim();
+  const alertWhatsApp = String(data.alertWhatsApp || '').trim();
   if (!businessName) throw new Error('Business name is required.');
   if (!/^\d{10}$/.test(mobile)) throw new Error('Enter a valid 10 digit admin mobile number.');
   if (!PIN_PATTERN.test(pin)) throw new Error('Admin PIN must be exactly 4 numbers.');
   const bizSnap = await db.ref('businesses/' + session.businessId).once('value');
   const biz = bizSnap.val() || {};
   await updateBusinessAdminLogin(session.businessId, session.mobile || biz.mobile || '', mobile, pin);
-  await db.ref('businesses/' + session.businessId).update({ name: businessName });
-  return { businessName, mobile, pin };
+  await db.ref('businesses/' + session.businessId).update({ name: businessName, brandColor, alertWhatsApp });
+  return { businessName, mobile, pin, brandColor, alertWhatsApp };
 }
 
 function listenAttendance(businessId, staffId){
@@ -1471,6 +1562,56 @@ async function updateLeaveStatus(businessId, leaveId, status){
   await db.ref('businesses/' + businessId + '/leaves/' + leaveId).update({ status });
 }
 
+/* ---- Attendance correction requests ---- */
+function listenCorrectionRequests(businessId, staffId){
+  if (state.correctionRequestsListenerRef) state.correctionRequestsListenerRef.off();
+  const ref = db.ref('businesses/' + businessId + '/correctionRequests');
+  state.correctionRequestsListenerRef = ref;
+  ref.on('value', snap=>{
+    const val = snap.val() || {};
+    let list = Object.keys(val).map(id=>({ id, ...val[id] }));
+    if (staffId) list = list.filter(r=>r.staffId===staffId);
+    list.sort((a,b)=>(b.createdAt||0)-(a.createdAt||0));
+    state.correctionRequests = list;
+    if (['adminCorrections','applyCorrection','adminHome','staffHome'].includes(state.screen)) render();
+  });
+}
+async function submitCorrectionRequest(businessId, staffId, staffName, data){
+  const ref = db.ref('businesses/' + businessId + '/correctionRequests').push();
+  await ref.set({
+    staffId, staffName,
+    date: data.date,
+    type: data.type,
+    time: data.time,
+    reason: data.reason || '',
+    status: 'pending',
+    createdAt: firebase.database.ServerValue.TIMESTAMP
+  });
+}
+async function updateCorrectionStatus(businessId, requestId, status){
+  const reqSnap = await db.ref('businesses/' + businessId + '/correctionRequests/' + requestId).once('value');
+  const req = reqSnap.val();
+  if (!req) throw new Error('Request not found.');
+  const updates = {};
+  updates['businesses/' + businessId + '/correctionRequests/' + requestId + '/status'] = status;
+  updates['businesses/' + businessId + '/correctionRequests/' + requestId + '/reviewedAt'] = firebase.database.ServerValue.TIMESTAMP;
+  if (status === 'approved'){
+    const ts = new Date(req.date + 'T' + (req.time || '09:30')).getTime();
+    const attRef = db.ref('businesses/' + businessId + '/attendance').push();
+    updates['businesses/' + businessId + '/attendance/' + attRef.key] = {
+      staffId: req.staffId,
+      staffName: req.staffName,
+      type: req.type || 'in',
+      lat: null,
+      lng: null,
+      ts,
+      manual: true,
+      correctionRequestId: requestId
+    };
+  }
+  await db.ref().update(updates);
+}
+
 /* ---- Complaints ---- */
 function listenComplaints(businessId, staffId){
   if (state.complaintsListenerRef) state.complaintsListenerRef.off();
@@ -1548,9 +1689,9 @@ function listenLiveLocations(businessId){
     if (state.screen==='adminLiveMap') render();
   });
 }
-async function updateLiveLocation(businessId, staffId, staffName, lat, lng){
+async function updateLiveLocation(businessId, staffId, staffName, lat, lng, accuracy){
   await db.ref('businesses/' + businessId + '/liveLocations/' + staffId).set({
-    staffName, lat, lng, updatedAt: firebase.database.ServerValue.TIMESTAMP
+    staffName, lat, lng, accuracy: accuracy || null, updatedAt: firebase.database.ServerValue.TIMESTAMP
   });
 }
 async function clearLiveLocation(businessId, staffId){
@@ -1722,6 +1863,7 @@ async function bootstrap(){
         listenAttendance(existing.businessId, null);
         listenMeetings(existing.businessId);
         listenLeaves(existing.businessId, null);
+        listenCorrectionRequests(existing.businessId, null);
         listenComplaints(existing.businessId, null);
         listenApps(existing.businessId);
         listenLiveLocations(existing.businessId);
@@ -1733,6 +1875,7 @@ async function bootstrap(){
         listenAttendance(existing.businessId, existing.staffId);
         listenMeetings(existing.businessId);
         listenLeaves(existing.businessId, existing.staffId);
+        listenCorrectionRequests(existing.businessId, existing.staffId);
         listenApps(existing.businessId);
         startLiveLocationIfEnabled();
         listenLocationRequests(existing.businessId, existing.staffId);
@@ -1754,7 +1897,7 @@ async function bootstrap(){
 
     if (existing && existing.role === 'staff' && existing.businessId === attendBiz){
       go('punching');
-      prepareConfirm(existing.businessId, existing.staffId, existing.name, existing.adminMobile);
+      prepareConfirm(existing.businessId, existing.staffId, existing.name, existing.alertWhatsApp || existing.adminMobile);
       return;
     } else if (existing && existing.role === 'admin'){
       toast("Log in as staff on this device to mark attendance.");
@@ -1788,19 +1931,19 @@ async function prepareConfirm(businessId, staffId, staffName, adminMobile){
     if (state.lastLiveLocation && Date.now() - state.lastLiveLocation.ts < 10 * 60 * 1000){
       state.pendingPunch = {
         businessId, staffId, staffName, adminMobile,
-        type: suggested, lat: state.lastLiveLocation.lat, lng: state.lastLiveLocation.lng,
+        type: suggested, lat: state.lastLiveLocation.lat, lng: state.lastLiveLocation.lng, accuracy: state.lastLiveLocation.accuracy || null,
         lockedType: status.hasIn ? 'out' : (status.hasOut ? 'in' : null)
       };
       go('confirmPunch');
       return;
     }
     navigator.geolocation.getCurrentPosition((pos)=>{
-      const { latitude, longitude } = pos.coords;
-      state.lastLiveLocation = { lat: latitude, lng: longitude, ts: Date.now() };
+      const { latitude, longitude, accuracy } = pos.coords;
+      state.lastLiveLocation = { lat: latitude, lng: longitude, accuracy: accuracy || null, ts: Date.now() };
       saveLiveLocationPermission();
       state.pendingPunch = {
         businessId, staffId, staffName, adminMobile,
-        type: suggested, lat: latitude, lng: longitude,
+        type: suggested, lat: latitude, lng: longitude, accuracy: accuracy || null,
         lockedType: status.hasIn ? 'out' : (status.hasOut ? 'in' : null)
       };
       go('confirmPunch');
@@ -1826,7 +1969,7 @@ function setPendingType(type){
 async function confirmPunch(){
   const p = state.pendingPunch;
   if (!p) { go('staffHome'); return; }
-  await markAttendance(p.businessId, p.staffId, p.staffName, p.type, p.lat, p.lng);
+  await markAttendance(p.businessId, p.staffId, p.staffName, p.type, p.lat, p.lng, { accuracy: p.accuracy || null, locationCapturedAt: Date.now() });
   if (p.type === 'out') clearShiftTimers();
   state.lastPunchType = p.type;
   state.lastPunchAdminMobile = p.adminMobile;
@@ -1851,6 +1994,7 @@ function render(){
     legal: renderLegal,
     mainAdminHome: renderMainAdminHome,
     mainBusinessDetails: renderMainBusinessDetails,
+    mainBackupExport: renderMainBackupExport,
     adminHome: renderAdminHome,
     adminStaff: renderAdminStaff,
     addStaff: renderAddStaff,
@@ -1866,6 +2010,7 @@ function render(){
     rewards: renderRewards,
     adminMeetings: renderAdminMeetings,
     adminLeaves: renderAdminLeaves,
+    adminCorrections: renderAdminCorrections,
     adminComplaints: renderAdminComplaints,
     adminApps: renderAdminApps,
     adminLiveMap: renderAdminLiveMap,
@@ -1873,6 +2018,8 @@ function render(){
     chatThread: renderChatThread,
     profile: renderProfile,
     staffHome: renderStaffHome,
+    staffIdCard: renderStaffIdCard,
+    applyCorrection: renderApplyCorrection,
     scanning: renderScanning,
     punching: renderPunching,
     confirmPunch: renderConfirmPunch,
@@ -1996,6 +2143,7 @@ async function doLogin(){
       listenAttendance(session.businessId, null);
       listenMeetings(session.businessId);
       listenLeaves(session.businessId, null);
+      listenCorrectionRequests(session.businessId, null);
       listenComplaints(session.businessId, null);
       listenApps(session.businessId);
       listenLiveLocations(session.businessId);
@@ -2008,6 +2156,7 @@ async function doLogin(){
       listenAttendance(session.businessId, session.staffId);
       listenMeetings(session.businessId);
       listenLeaves(session.businessId, session.staffId);
+      listenCorrectionRequests(session.businessId, session.staffId);
       listenApps(session.businessId);
       startLiveLocationIfEnabled();
       listenLocationRequests(session.businessId, session.staffId);
@@ -2017,7 +2166,7 @@ async function doLogin(){
         const biz = state.pendingAttendBiz;
         state.pendingAttendBiz = null;
         go('punching');
-        prepareConfirm(biz, session.staffId, session.name, session.adminMobile);
+        prepareConfirm(biz, session.staffId, session.name, session.alertWhatsApp || session.adminMobile);
       } else {
         state.pendingAttendBiz = null;
         go('staffHome');
@@ -2098,6 +2247,7 @@ async function doRegister(){
     listenAttendance(businessId, null);
     listenMeetings(businessId);
     listenLeaves(businessId, null);
+    listenCorrectionRequests(businessId, null);
     listenComplaints(businessId, null);
     listenApps(businessId);
     listenLiveLocations(businessId);
@@ -2180,7 +2330,10 @@ function renderMainAdminHome(app){
         <div class="stat"><div class="num">${totalStaff}</div><div class="lbl">Staff</div></div>
         <div class="stat"><div class="num">${blockedBusinesses}</div><div class="lbl">Blocked</div></div>
       </div>
-      <button class="btn btn-marigold" onclick="go('mainCreateBusiness')">${iconHTML('plus')}Create Customer Business</button>
+      <div style="display:flex; gap:10px;">
+        <button class="btn btn-marigold" onclick="go('mainCreateBusiness')">${iconHTML('plus')}Create Customer Business</button>
+        <button class="btn btn-outline" onclick="go('mainBackupExport')">${iconHTML('wallet')}Backup / Export</button>
+      </div>
       <div class="card">
         <div class="section-title">Main Admin Logins</div>
         ${state.mainAdmins.length===0 ? `<div class="empty">No main admin login found.</div>` :
@@ -2232,6 +2385,87 @@ function renderMainAdminHome(app){
 function openMainBusiness(businessId){
   state.selectedBusinessId = businessId;
   go('mainBusinessDetails');
+}
+
+function renderMainBackupExport(app){
+  const activeCount = state.allBusinesses.filter(b=>['active','trial'].includes(businessAccountInfo(b).effectiveStatus)).length;
+  const rows = state.allBusinesses.map(b=>({
+    id: b.id,
+    name: b.name || '',
+    adminName: b.adminName || '',
+    mobile: b.mobile || '',
+    plan: b.plan || DEFAULT_PLAN,
+    accountStatus: businessAccountInfo(b).effectiveStatus,
+    billingStatus: b.billingStatus || '',
+    billingAmount: b.billingAmount || 0,
+    nextRenewalAt: b.nextRenewalAt || '',
+    staffCount: Object.keys(b.staff || {}).length,
+    todayIn: b.todayIn || 0
+  }));
+  app.innerHTML = `
+    ${topbar('Main Admin','Backup / Export','Download customer and business records')}
+    <div class="screen">
+      <div class="stat-row">
+        <div class="stat"><div class="num">${state.allBusinesses.length}</div><div class="lbl">Businesses</div></div>
+        <div class="stat"><div class="num">${activeCount}</div><div class="lbl">Active</div></div>
+        <div class="stat"><div class="num">${state.allBusinesses.reduce((sum,b)=>sum+Object.keys(b.staff||{}).length,0)}</div><div class="lbl">Staff</div></div>
+      </div>
+      <div class="card">
+        <div class="section-title">Export Data</div>
+        <div class="staff-sub" style="margin-bottom:14px;">JSON includes business profiles, billing fields, staff records, attendance, leave, chats, apps, and live-location rows currently loaded for main admin.</div>
+        <button class="btn btn-marigold" onclick="exportAllBusinessBackup()">${iconHTML('wallet')}Download Full JSON Backup</button>
+        <div style="height:10px"></div>
+        <button class="btn btn-outline" onclick="exportBusinessBillingCSV()">${iconHTML('calendar')}Download Billing CSV</button>
+      </div>
+      <div class="card">
+        ${rows.map(r=>`
+          <div class="attendance-item">
+            <div class="att-left">
+              <div class="staff-name" style="font-size:14px;">${escapeHTML(r.name || 'Business')}</div>
+              <div class="staff-sub">${escapeHTML(r.adminName || 'Admin')} · ${escapeHTML(r.mobile || '')}</div>
+            </div>
+            <div class="att-right">
+              <span class="badge ${r.accountStatus==='active'?'badge-in':r.accountStatus==='trial'?'badge-half':'badge-out'}">${escapeHTML(r.accountStatus)}</span>
+              <span class="staff-sub">${escapeHTML(r.billingStatus || 'billing not set')}</span>
+            </div>
+          </div>
+        `).join('') || `<div class="empty">No businesses loaded.</div>`}
+      </div>
+      <button class="btn btn-ghost" onclick="go('mainAdminHome')">${iconHTML('arrowLeft')}Back</button>
+    </div>
+    ${mainAdminNav('mainAdminHome')}`;
+}
+
+function exportAllBusinessBackup(){
+  const payload = {
+    exportedAt: new Date().toISOString(),
+    app: APP_SUPPORT.brand,
+    businesses: state.allBusinesses,
+    mainAdmins: state.mainAdmins
+  };
+  downloadTextFile('beaconblitz-business-backup.json', JSON.stringify(payload, null, 2), 'application/json;charset=utf-8');
+  toast('Full backup downloaded');
+}
+
+function exportBusinessBillingCSV(){
+  const header = ['Business','Admin','Login ID','Plan','Account Status','Payment Status','Amount','Next Renewal','Staff Count','Notes'];
+  const lines = [header.map(csvCell).join(',')];
+  state.allBusinesses.forEach(b=>{
+    lines.push([
+      b.name || '',
+      b.adminName || '',
+      b.mobile || '',
+      b.plan || DEFAULT_PLAN,
+      businessAccountInfo(b).effectiveStatus,
+      b.billingStatus || '',
+      b.billingAmount || '',
+      b.nextRenewalAt ? new Date(b.nextRenewalAt).toLocaleDateString('en-IN') : '',
+      Object.keys(b.staff || {}).length,
+      b.sellerNotes || ''
+    ].map(csvCell).join(','));
+  });
+  downloadTextFile('beaconblitz-billing.csv', lines.join('\n'), 'text/csv;charset=utf-8');
+  toast('Billing CSV downloaded');
 }
 
 function renderMainCreateBusiness(app){
@@ -2366,6 +2600,17 @@ function renderMainBusinessDetails(app){
         <input id="mainTrialEnds" type="date" value="${formatDateInput(b.trialEndsAt)}">
         <label>Subscription ends</label>
         <input id="mainSubEnds" type="date" value="${formatDateInput(b.subscriptionEndsAt)}">
+        <label>Payment status</label>
+        <select id="mainBillingStatus">
+          <option value="paid" ${b.billingStatus==='paid'?'selected':''}>Paid</option>
+          <option value="unpaid" ${(!b.billingStatus || b.billingStatus==='unpaid')?'selected':''}>Unpaid</option>
+          <option value="partial" ${b.billingStatus==='partial'?'selected':''}>Partial</option>
+          <option value="overdue" ${b.billingStatus==='overdue'?'selected':''}>Overdue</option>
+        </select>
+        <label>Next renewal date</label>
+        <input id="mainNextRenewal" type="date" value="${formatDateInput(b.nextRenewalAt || b.subscriptionEndsAt)}">
+        <label>Billing amount</label>
+        <input id="mainBillingAmount" type="number" min="0" value="${b.billingAmount || ''}" placeholder="Monthly / renewal amount">
         <label>Seller notes</label>
         <textarea id="mainSellerNotes" rows="3" placeholder="Payment notes, follow-up, custom terms">${escapeHTML(b.sellerNotes || '')}</textarea>
         ${state.error ? `<div class="error-text">${state.error}</div>` : ''}
@@ -2462,6 +2707,9 @@ async function doSaveMainBusinessAccount(){
       staffLimit,
       trialEndsAt: parseDateInputToEndTs(document.getElementById('mainTrialEnds').value),
       subscriptionEndsAt: parseDateInputToEndTs(document.getElementById('mainSubEnds').value),
+      billingStatus: document.getElementById('mainBillingStatus').value,
+      nextRenewalAt: parseDateInputToEndTs(document.getElementById('mainNextRenewal').value),
+      billingAmount: document.getElementById('mainBillingAmount').value,
       sellerNotes: document.getElementById('mainSellerNotes').value.trim()
     });
     toast('Business account updated');
@@ -2529,12 +2777,35 @@ function renderAdminHome(app){
   const qrUrl = window.location.origin + window.location.pathname + '?attend=' + businessId;
   const todayStr = new Date().toDateString();
   const todayIn = state.attendance.filter(a=> a.ts && new Date(a.ts).toDateString()===todayStr && a.type==='in');
+  const todaySummary = staffDaySummary(new Date());
+  const week = weeklyPerformanceSummary();
+  const pendingCorrections = state.correctionRequests.filter(r=>r.status==='pending').length;
   app.innerHTML = `
     ${topbar('Admin', state.session.businessName, `Welcome, ${state.session.name}`)}
     <div class="screen">
       <div class="stat-row">
         <div class="stat"><div class="num">${state.staffList.length}</div><div class="lbl">Staff</div></div>
         <div class="stat"><div class="num">${todayIn.length}</div><div class="lbl">Checked in today</div></div>
+      </div>
+      <div class="stat-row">
+        <div class="stat"><div class="num">${todaySummary.present}</div><div class="lbl">Present</div></div>
+        <div class="stat"><div class="num">${todaySummary.late}</div><div class="lbl">Late/Half</div></div>
+        <div class="stat"><div class="num">${todaySummary.absent}</div><div class="lbl">Absent</div></div>
+      </div>
+      <div class="card">
+        <div class="section-title">Today Analytics</div>
+        <div class="staff-sub" style="margin-bottom:10px;">Pending corrections: ${pendingCorrections} · Pending leave: ${state.leaves.filter(l=>l.status==='pending').length}</div>
+        <div style="display:flex; gap:10px;">
+          <button class="btn btn-outline" onclick="sendTodaySummaryWhatsApp()">${iconHTML('bell')}WhatsApp Summary</button>
+          <button class="btn btn-outline" onclick="go('adminCorrections')">${iconHTML('checkSquare')}Correction Requests</button>
+        </div>
+      </div>
+      <div class="card">
+        <div class="section-title">Weekly Performance</div>
+        <div style="display:grid; grid-template-columns:repeat(7,1fr); gap:6px; align-items:end; margin-bottom:12px;">
+          ${week.days.map(d=>`<div style="text-align:center;"><div style="height:${Math.max(8, d.present*10)}px; border-radius:8px 8px 4px 4px; background:var(--indigo);"></div><div class="staff-sub" style="font-size:10px;">${d.label}</div></div>`).join('')}
+        </div>
+        <div class="staff-sub">${week.staffScores.slice(0,3).map(x=>`${escapeHTML(x.staff.name || 'Staff')}: ${x.presentDays} days`).join(' · ') || 'No performance data yet.'}</div>
       </div>
       ${accountWarningHTML()}
       ${state.session.accountStatus ? `
@@ -2553,6 +2824,7 @@ function renderAdminHome(app){
       ${importantNoticeHTML()}
 
       <div class="qr-ticket">
+        ${state.session.profilePhoto ? `<div class="avatar" style="margin:0 auto 10px;"><img src="${state.session.profilePhoto}" alt="Business logo"></div>` : ''}
         <div class="biz">${state.session.businessName}'s Attendance QR</div>
         <div class="qrbox" id="qrCanvas"></div>
         <div class="hint">Staff can scan this with any camera or QR app - it opens straight to attendance</div>
@@ -2567,6 +2839,7 @@ function renderAdminHome(app){
       <div class="tile-grid">
         ${tileHTML('handshake','#FDE3EE','Meetings',"go('adminMeetings')")}
         ${tileHTML('calendar','#FFE3CC','Leave Requests',"go('adminLeaves')")}
+        ${tileHTML('checkSquare','#E9E6FF','Corrections',"go('adminCorrections')")}
         ${tileHTML('megaphone','#FDE7E7','Complaints',"go('adminComplaints')")}
         ${tileHTML('grid','#E3F0FF','Manage Apps',"go('adminApps')")}
         ${tileHTML('pin','#FDE3EE','Live Location',"go('adminLiveMap')")}
@@ -2587,9 +2860,17 @@ function renderAdminHome(app){
     const el = document.getElementById('qrCanvas');
     if (el && window.QRCode){
       el.innerHTML='';
-      new QRCode(el, { text: qrUrl, width:170, height:170, colorDark:'#1B1550', colorLight:'#ffffff' });
+      new QRCode(el, { text: qrUrl, width:170, height:170, colorDark: state.session.brandColor || '#1B1550', colorLight:'#ffffff' });
     }
   },0);
+}
+
+function sendTodaySummaryWhatsApp(){
+  const summary = staffDaySummary(new Date());
+  const absent = summary.rows.filter(r=>r.status==='absent').map(r=>r.staff.name).join(', ') || 'None';
+  const late = summary.rows.filter(r=>r.status==='half').map(r=>r.staff.name).join(', ') || 'None';
+  const msg = `${state.session.businessName} attendance summary\nPresent: ${summary.present}\nLate/Half: ${summary.late} (${late})\nAbsent: ${summary.absent} (${absent})\nPending: ${summary.pending}`;
+  openWhatsApp(state.session.alertWhatsApp || state.session.mobile || state.session.adminMobile, msg);
 }
 
 function bottomNav(active){
@@ -2614,6 +2895,7 @@ function doLogout(){
   if (state.staffListenerRef) state.staffListenerRef.off();
   if (state.attendanceListenerRef) state.attendanceListenerRef.off();
   if (state.liveLocationsListenerRef) state.liveLocationsListenerRef.off();
+  if (state.correctionRequestsListenerRef) state.correctionRequestsListenerRef.off();
   if (state.allBusinessesListenerRef) state.allBusinessesListenerRef.off();
   if (state.mainAdminsListenerRef) state.mainAdminsListenerRef.off();
   if (state.locationRequestListenerRef) state.locationRequestListenerRef.off();
@@ -2722,6 +3004,10 @@ function renderProfile(app){
           <input id="adminBizMobile" type="tel" maxlength="10" inputmode="numeric" value="${escapeHTML(d.mobile || state.session.mobile || '')}">
           <label>Admin 4-digit PIN</label>
           <input id="adminBizPin" type="password" maxlength="4" inputmode="numeric" value="${escapeHTML(d.pin || '')}">
+          <label>Brand color</label>
+          <input id="adminBrandColor" type="color" value="${escapeHTML(d.brandColor || '#5646C6')}">
+          <label>WhatsApp alert number</label>
+          <input id="adminAlertWhatsApp" type="tel" inputmode="numeric" value="${escapeHTML(d.alertWhatsApp || state.session.alertWhatsApp || '')}" placeholder="Real WhatsApp number for alerts">
           <button class="btn btn-marigold" id="adminBizBtn" onclick="doSaveAdminBusinessDetails()">${iconHTML('checkSquare')}Save Business Login</button>
         </div>
       ` : ''}
@@ -2786,6 +3072,10 @@ async function handleProfilePhotoSelected(event){
     const photoData = await resizeImageFile(file);
     await updateProfilePhoto(state.session, photoData);
     state.profileDetails.photo = photoData;
+    if (state.session.role === 'admin'){
+      state.session.profilePhoto = photoData;
+      saveSession(state.session);
+    }
     toast('Profile picture updated');
     render();
   }catch(e){
@@ -2797,6 +3087,10 @@ async function removeProfilePhoto(){
   try{
     await updateProfilePhoto(state.session, '');
     state.profileDetails.photo = '';
+    if (state.session.role === 'admin'){
+      state.session.profilePhoto = '';
+      saveSession(state.session);
+    }
     toast('Profile picture removed');
     render();
   }catch(e){
@@ -2815,7 +3109,9 @@ async function doSaveAdminBusinessDetails(){
   const data = {
     businessName: document.getElementById('adminBizName').value.trim(),
     mobile: document.getElementById('adminBizMobile').value.trim(),
-    pin: document.getElementById('adminBizPin').value.trim()
+    pin: document.getElementById('adminBizPin').value.trim(),
+    brandColor: document.getElementById('adminBrandColor')?.value || '#5646C6',
+    alertWhatsApp: document.getElementById('adminAlertWhatsApp')?.value.trim() || ''
   };
   const btn = document.getElementById('adminBizBtn');
   btn.disabled = true; btn.textContent = 'Saving...';
@@ -2824,11 +3120,14 @@ async function doSaveAdminBusinessDetails(){
     state.session.businessName = updated.businessName;
     state.session.mobile = updated.mobile;
     state.session.adminMobile = updated.mobile;
+    state.session.alertWhatsApp = updated.alertWhatsApp;
     saveSession(state.session);
     if (state.profileDetails){
       state.profileDetails.businessName = updated.businessName;
       state.profileDetails.mobile = updated.mobile;
       state.profileDetails.pin = updated.pin;
+      state.profileDetails.brandColor = updated.brandColor;
+      state.profileDetails.alertWhatsApp = updated.alertWhatsApp;
     }
     toast('Business login updated');
     state.error = '';
@@ -2981,6 +3280,10 @@ function renderEditStaff(app){
         <input id="editGrace" type="number" min="0" value="${s.graceMinutes!=null ? s.graceMinutes : 30}">
         <label>Monthly Salary (₹)</label>
         <input id="editSalary" type="number" min="0" value="${s.monthlySalary!=null ? s.monthlySalary : 0}">
+        <div class="config-warning" style="margin-bottom:14px;">
+          Device lock: ${s.deviceId ? 'This staff login is locked to one phone.' : 'This staff login will lock to the next phone used.'}
+        </div>
+        <button class="btn btn-outline" type="button" onclick="resetStaffDeviceLock('${s.id}')">${iconHTML('refresh')}Reset Device Lock</button>
         ${state.error ? `<div class="error-text">${state.error}</div>` : ''}
         <button class="btn btn-primary" id="editStaffBtn" onclick="doUpdateStaff()">Save Changes</button>
         <div style="height:10px"></div>
@@ -3008,6 +3311,11 @@ async function doDeleteStaff(){
   }catch(e){
     state.error = e.message; render();
   }
+}
+
+async function resetStaffDeviceLock(staffId){
+  await db.ref('businesses/' + state.session.businessId + '/staff/' + staffId + '/deviceId').remove();
+  toast('Device lock reset. Staff can log in on a new phone.');
 }
 
 async function doUpdateStaff(){
@@ -3211,6 +3519,7 @@ function renderAdminSalary(app){
       ${salaryHeaderControls()}
       ${staff ? `<div class="staff-sub" style="text-align:center; margin-top:-8px;">${staff.employmentType==='part'?'Part Time':'Full Time'} staff</div>` : ''}
       ${staff ? renderSalaryBody(staff, state.attendance.filter(a=>a.staffId===staff.id)) : `<div class="card empty">No staff yet.</div>`}
+      ${staff ? `<div class="card" style="display:flex; gap:10px;"><button class="btn btn-outline" onclick="exportSalaryCSV('${staff.id}')">${iconHTML('wallet')}Salary CSV</button><button class="btn btn-marigold" onclick="printSalaryReport('${staff.id}')">${iconHTML('calendar')}PDF / Print</button></div>` : ''}
     </div>
     ${bottomNav('adminSalary')}
   `;
@@ -3278,6 +3587,56 @@ function renderSalaryBody(staff, staffAttendance){
         `).join('')}
     </div>
   `;
+}
+
+function salaryRowsForStaff(staffId){
+  ensureSalaryState();
+  const staff = state.staffList.find(s=>s.id===staffId) || state.ownStaffRecord;
+  if (!staff) return { staff:null, rows:[] };
+  const attendance = state.attendance.filter(a=>a.staffId===staff.id);
+  return { staff, rows: buildMonthRows(staff, state.salary.year, state.salary.month, attendance) };
+}
+
+function exportSalaryCSV(staffId){
+  const { staff, rows } = salaryRowsForStaff(staffId);
+  if (!staff) return;
+  const header = ['Date','Status','In','Out','Pay'];
+  const lines = [header.map(csvCell).join(',')];
+  rows.forEach(r=>{
+    lines.push([
+      r.dateObj.toLocaleDateString('en-IN'),
+      statusLabel(r.status, r.leavePaid),
+      r.inTime ? fmtTime(r.inTime) : '',
+      r.outTime ? fmtTime(r.outTime) : '',
+      r.pay.toFixed(2)
+    ].map(csvCell).join(','));
+  });
+  downloadTextFile(`${(staff.name||'staff').replace(/[^a-z0-9]+/gi,'-').toLowerCase()}-salary.csv`, lines.join('\n'), 'text/csv;charset=utf-8');
+  toast('Salary CSV downloaded');
+}
+
+function printSalaryReport(staffId){
+  const { staff, rows } = salaryRowsForStaff(staffId);
+  if (!staff) return;
+  const total = rows.reduce((sum,r)=>sum+r.pay,0);
+  const monthName = new Date(state.salary.year, state.salary.month).toLocaleDateString('en-IN',{month:'long', year:'numeric'});
+  const html = `
+    <html><head><title>Salary Report</title><style>
+      body{font-family:Arial,sans-serif;padding:24px;color:#111} table{width:100%;border-collapse:collapse} th,td{border:1px solid #ddd;padding:8px;text-align:left} h1{margin-bottom:4px}
+    </style></head><body>
+      <h1>${escapeHTML(state.session.businessName || '')}</h1>
+      <h2>${escapeHTML(staff.name || '')} - ${monthName}</h2>
+      <p>Monthly salary: ₹${(Number(staff.monthlySalary)||0).toLocaleString('en-IN')} · Earned: ₹${total.toLocaleString('en-IN',{maximumFractionDigits:0})}</p>
+      <table><thead><tr><th>Date</th><th>Status</th><th>In</th><th>Out</th><th>Pay</th></tr></thead><tbody>
+      ${rows.map(r=>`<tr><td>${r.dateObj.toLocaleDateString('en-IN')}</td><td>${statusLabel(r.status,r.leavePaid)}</td><td>${r.inTime?fmtTime(r.inTime):''}</td><td>${r.outTime?fmtTime(r.outTime):''}</td><td>₹${r.pay.toLocaleString('en-IN',{maximumFractionDigits:0})}</td></tr>`).join('')}
+      </tbody></table>
+    </body></html>`;
+  const w = window.open('', '_blank');
+  if (!w){ toast('Allow popups to print salary report.'); return; }
+  w.document.write(html);
+  w.document.close();
+  w.focus();
+  w.print();
 }
 
 function rangeStart(range){
@@ -3393,7 +3752,7 @@ function filteredAttendanceForReport(){
 
 function exportAttendanceCSV(){
   const rows = filteredAttendanceForReport();
-  const header = ['Date','Time','Staff Name','Mobile','Type','Manual','Latitude','Longitude','Map Link'];
+  const header = ['Date','Time','Staff Name','Mobile','Type','Manual','Latitude','Longitude','Accuracy meters','Map Link'];
   const lines = [header.map(csvCell).join(',')];
   rows.forEach(a=>{
     const s = state.staffList.find(x=>x.id===a.staffId) || {};
@@ -3408,6 +3767,7 @@ function exportAttendanceCSV(){
       a.manual ? 'Yes' : 'No',
       a.lat || '',
       a.lng || '',
+      a.accuracy || '',
       mapLink
     ].map(csvCell).join(','));
   });
@@ -3613,7 +3973,7 @@ async function doAddManualAttendance(){
   }
 }
 
-const LIVE_LOCATION_INTERVAL_MS = 5 * 60 * 1000;
+const LIVE_LOCATION_INTERVAL_MS = 60 * 1000;
 let autoCheckoutTimeout = null;
 let shiftCountdownInterval = null;
 let liveLocationInterval = null;
@@ -3628,10 +3988,10 @@ function clearShiftTimers(){
 function pushLiveLocation(){
   if (!state.session || state.session.role !== 'staff') return;
   navigator.geolocation.getCurrentPosition((pos)=>{
-    const { latitude, longitude } = pos.coords;
-    state.lastLiveLocation = { lat: latitude, lng: longitude, ts: Date.now() };
+    const { latitude, longitude, accuracy } = pos.coords;
+    state.lastLiveLocation = { lat: latitude, lng: longitude, accuracy: accuracy || null, ts: Date.now() };
     saveLiveLocationPermission();
-    updateLiveLocation(state.session.businessId, state.session.staffId, state.session.name, latitude, longitude).catch(()=>{});
+    updateLiveLocation(state.session.businessId, state.session.staffId, state.session.name, latitude, longitude, accuracy).catch(()=>{});
   }, ()=>{}, { enableHighAccuracy:true, timeout:10000, maximumAge:60000 });
 }
 
@@ -3700,10 +4060,10 @@ function startLiveLocationTracking(){
   if (!state.session || state.session.role !== 'staff' || !navigator.geolocation) return;
   if (liveLocationWatchId == null){
     liveLocationWatchId = navigator.geolocation.watchPosition((pos)=>{
-      const { latitude, longitude } = pos.coords;
-      state.lastLiveLocation = { lat: latitude, lng: longitude, ts: Date.now() };
+      const { latitude, longitude, accuracy } = pos.coords;
+      state.lastLiveLocation = { lat: latitude, lng: longitude, accuracy: accuracy || null, ts: Date.now() };
       saveLiveLocationPermission();
-      updateLiveLocation(state.session.businessId, state.session.staffId, state.session.name, latitude, longitude).catch(()=>{});
+      updateLiveLocation(state.session.businessId, state.session.staffId, state.session.name, latitude, longitude, accuracy).catch(()=>{});
       if (state.screen === 'staffHome' || state.screen === 'profile') render();
     }, ()=>{
       if (!hasLiveLocationPermissionSaved() && state.screen === 'staffHome'){
@@ -3811,8 +4171,10 @@ function renderStaffHome(app){
       <div class="section-title">What do you want to do today?</div>
       <div class="tile-grid">
         ${tileHTML('scan','#E9E6FF','Attendance',"go('scanning')")}
+        ${tileHTML('checkSquare','#E3F0FF','Correction',"go('applyCorrection')")}
         ${tileHTML('calendar','#FFE3CC','Apply Leave',"go('applyLeave')")}
         ${tileHTML('wallet','#DDF3E7','Payslip',"go('staffSalary')")}
+        ${tileHTML('user','#DDF3E7','ID Card',"go('staffIdCard')")}
         ${tileHTML('handshake','#FDE3EE','Meeting',"go('staffMeetings')")}
         ${tileHTML('checkSquare','#E3F0FF','Todo',"window.open('https://beaconblitz.github.io/bb-to-do/','_blank')")}
         ${tileHTML('megaphone','#FDE7E7','Complaints',"go('complaintForm')")}
@@ -3833,6 +4195,106 @@ function renderStaffHome(app){
 }
 
 let html5QrCode = null;
+
+/* ---------------- Staff ID card ---------------- */
+function renderStaffIdCard(app){
+  const staff = state.ownStaffRecord || state.staffList.find(s=>s.id===state.session.staffId) || {
+    id: state.session.staffId,
+    name: state.session.name,
+    mobile: '',
+    designation: ''
+  };
+  const qrText = JSON.stringify({ businessId: state.session.businessId, staffId: state.session.staffId, name: state.session.name });
+  app.innerHTML = `
+    ${topbar('Profile','Staff ID Card', state.session.businessName)}
+    <div class="screen">
+      <div class="card" id="staffIdCardCanvas" style="text-align:center; border-top:6px solid ${escapeHTML(state.session.brandColor || '#5646C6')};">
+        <div class="profile-photo" style="margin:0 auto 12px;">${staff.profilePhoto ? `<img src="${staff.profilePhoto}" alt="Profile">` : escapeHTML((staff.name||'?')[0].toUpperCase())}</div>
+        <div class="staff-name" style="font-size:20px;">${escapeHTML(staff.name || state.session.name)}</div>
+        <div class="staff-sub">${escapeHTML(staff.designation || 'Staff')} · ${escapeHTML(state.session.businessName || '')}</div>
+        <div class="qrbox" id="idQrBox" style="margin:16px auto 10px;"></div>
+        <div class="staff-sub mono">ID: ${escapeHTML(state.session.staffId || '')}</div>
+      </div>
+      <button class="btn btn-marigold" onclick="downloadStaffIdCard()">${iconHTML('wallet')}Download ID Card</button>
+      <button class="btn btn-ghost" onclick="go('staffHome')">${iconHTML('arrowLeft')}Back</button>
+    </div>
+    ${bottomNav('staffHome')}`;
+  setTimeout(()=>{
+    const el = document.getElementById('idQrBox');
+    if (el && window.QRCode){
+      el.innerHTML = '';
+      new QRCode(el, { text: qrText, width:150, height:150, colorDark:'#1B1550', colorLight:'#ffffff' });
+    }
+  },0);
+}
+
+function downloadStaffIdCard(){
+  const card = document.getElementById('staffIdCardCanvas');
+  if (!card){ return; }
+  const text = `${state.session.businessName}\n${state.session.name}\nStaff ID: ${state.session.staffId}`;
+  downloadTextFile(businessFilename('staff-id-card','txt'), text, 'text/plain;charset=utf-8');
+  toast('ID card details downloaded');
+}
+
+/* ---------------- Attendance correction request ---------------- */
+function renderApplyCorrection(app){
+  const today = new Date().toISOString().slice(0,10);
+  app.innerHTML = `
+    ${topbar('Attendance','Correction Request','Request admin approval for missed punch')}
+    <div class="screen">
+      <div class="card">
+        <label>Date</label>
+        <input id="corrDate" type="date" value="${today}">
+        <label>Punch type</label>
+        <select id="corrType">
+          <option value="in">Check In</option>
+          <option value="out">Check Out</option>
+        </select>
+        <label>Time</label>
+        <input id="corrTime" type="time" value="09:30">
+        <label>Reason</label>
+        <input id="corrReason" placeholder="Forgot punch, network issue, etc.">
+        ${state.error ? `<div class="error-text">${state.error}</div>` : ''}
+        <button class="btn btn-marigold" id="corrBtn" onclick="doApplyCorrection()">Submit Correction</button>
+        <button class="btn btn-ghost" onclick="go('staffHome')">${iconHTML('arrowLeft')}Back</button>
+      </div>
+      <div class="card">
+        <div class="section-title">My Requests</div>
+        ${state.correctionRequests.length ? state.correctionRequests.map(r=>`
+          <div class="attendance-item">
+            <div class="att-left">
+              <div class="staff-name" style="font-size:14px;">${escapeHTML(r.date || '')} · ${r.type==='out'?'Check Out':'Check In'} ${escapeHTML(r.time || '')}</div>
+              <div class="staff-sub">${escapeHTML(r.reason || '')}</div>
+            </div>
+            <span class="badge ${r.status==='approved'?'badge-in':r.status==='rejected'?'badge-out':'badge-pending'}">${escapeHTML(r.status || 'pending')}</span>
+          </div>
+        `).join('') : `<div class="list-empty-note">No correction requests yet.</div>`}
+      </div>
+    </div>
+    ${bottomNav('staffHome')}`;
+}
+
+async function doApplyCorrection(){
+  const data = {
+    date: document.getElementById('corrDate').value,
+    type: document.getElementById('corrType').value,
+    time: document.getElementById('corrTime').value,
+    reason: document.getElementById('corrReason').value.trim()
+  };
+  if (!data.date || !data.time || !data.reason){ state.error = 'Date, time and reason are required.'; render(); return; }
+  const btn = document.getElementById('corrBtn');
+  btn.disabled = true; btn.textContent = 'Submitting...';
+  try{
+    await submitCorrectionRequest(state.session.businessId, state.session.staffId, state.session.name, data);
+    openWhatsApp(state.session.alertWhatsApp || state.session.adminMobile, `Attendance correction request\n${state.session.name}\n${data.type === 'out' ? 'Check Out' : 'Check In'}: ${data.date} ${data.time}\nReason: ${data.reason}`);
+    toast('Correction request sent');
+    state.error = '';
+    go('applyCorrection');
+  }catch(e){
+    state.error = e.message || 'Could not send correction request.';
+    render();
+  }
+}
 
 /* ---------------- Apply Leave (staff) ---------------- */
 function renderApplyLeave(app){
@@ -3876,6 +4338,7 @@ async function doApplyLeave(){
   btn.disabled = true; btn.textContent='Submitting...';
   try{
     await submitLeave(state.session.businessId, state.session.staffId, state.session.name, { fromDate, toDate, reason });
+    openWhatsApp(state.session.alertWhatsApp || state.session.adminMobile, `Leave request\n${state.session.name}\n${fromDate}${toDate && toDate!==fromDate ? ' to '+toDate : ''}\nReason: ${reason}`);
     toast('Leave request sent to admin');
     go('applyLeave');
   }catch(e){
@@ -4042,6 +4505,7 @@ function renderAdminLeaves(app){
                     <button class="link" style="color:var(--danger);" onclick="doLeaveStatus('${l.id}','rejected')">Reject</button>
                   </div>
                 ` : `<span class="badge ${l.status==='approved'?'badge-in':'badge-out'}">${l.status}</span>`}
+                ${s.mobile ? `<button class="link" onclick="openWhatsApp('${escapeHTML(s.mobile)}','Leave request update from ${escapeHTML(state.session.businessName || 'Admin')}')">WhatsApp</button>` : ''}
               </div>
             </div>
           `;
@@ -4054,6 +4518,51 @@ function renderAdminLeaves(app){
 async function doLeaveStatus(leaveId, status){
   await updateLeaveStatus(state.session.businessId, leaveId, status);
   toast('Leave request ' + status);
+}
+
+function renderAdminCorrections(app){
+  app.innerHTML = `
+    ${topbar('Attendance','Correction Requests','Approve missed punch requests')}
+    <div class="screen">
+      <div class="card">
+        ${state.correctionRequests.length===0 ? `<div class="empty">No correction requests yet.</div>` :
+          state.correctionRequests.map(r=>{
+            const s = state.staffList.find(x=>x.id===r.staffId) || {};
+            return `
+              <div class="attendance-item">
+                <div class="row-flex">
+                  ${avatarHTML(s.name || r.staffName, s.profilePhoto)}
+                  <div>
+                    <div class="staff-name" style="font-size:14px;">${escapeHTML(s.name || r.staffName || 'Staff')}</div>
+                    <div class="staff-sub">${escapeHTML(r.date || '')} · ${r.type==='out'?'Check Out':'Check In'} ${escapeHTML(r.time || '')}</div>
+                    <div class="staff-sub">${escapeHTML(r.reason || '')}</div>
+                  </div>
+                </div>
+                <div class="att-right">
+                  ${r.status==='pending' ? `
+                    <div style="display:flex; gap:6px;">
+                      <button class="link" onclick="doCorrectionStatus('${r.id}','approved')">Approve</button>
+                      <button class="link" style="color:var(--danger);" onclick="doCorrectionStatus('${r.id}','rejected')">Reject</button>
+                    </div>
+                  ` : `<span class="badge ${r.status==='approved'?'badge-in':'badge-out'}">${escapeHTML(r.status)}</span>`}
+                  ${s.mobile ? `<button class="link" onclick="openWhatsApp('${escapeHTML(s.mobile)}','Attendance correction update: ${escapeHTML(r.status || 'pending')}')">WhatsApp</button>` : ''}
+                </div>
+              </div>`;
+          }).join('')}
+      </div>
+      <button class="btn btn-ghost" onclick="go('adminHome')">${iconHTML('arrowLeft')}Back</button>
+    </div>
+    ${bottomNav('adminHome')}`;
+}
+
+async function doCorrectionStatus(requestId, status){
+  try{
+    await updateCorrectionStatus(state.session.businessId, requestId, status);
+    toast('Correction request ' + status);
+  }catch(e){
+    state.error = e.message || 'Could not update correction request.';
+    render();
+  }
 }
 
 /* ---------------- Complaints (admin views) ---------------- */
@@ -4489,7 +4998,7 @@ async function onScanSuccess(decodedText){
   }
   statusEl.textContent = 'Getting your location...';
   stopScanAndGo('punching');
-  prepareConfirm(state.session.businessId, state.session.staffId, state.session.name, state.session.adminMobile);
+  prepareConfirm(state.session.businessId, state.session.staffId, state.session.name, state.session.alertWhatsApp || state.session.adminMobile);
 }
 
 function renderConfirmPunch(app){
