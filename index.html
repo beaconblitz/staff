@@ -19,9 +19,7 @@
 <title>Beaconblitz Staff - Attendance</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Sora:wght@500;600;700;800&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@500;600&display=swap" rel="stylesheet">
-<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
-<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
-<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-messaging-compat.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
 <style>
@@ -230,7 +228,18 @@
   .login-card{position:relative; overflow:hidden;}
   .login-card.login-error{animation:loginShake .38s ease;}
   .login-card.login-success{animation:loginPop .46s ease;}
-  .login-card.login-error input{box-shadow: inset 4px 4px 8px var(--clay-dark), inset -4px -4px 8px var(--clay-light), 0 0 0 2px var(--danger);}
+  .login-card.login-error .login-field{box-shadow: inset 4px 4px 8px var(--clay-dark), inset -4px -4px 8px var(--clay-light), 0 0 0 2px var(--danger);}
+  .login-field{
+    display:flex; align-items:center; gap:10px;
+    margin-bottom:16px; padding:0 14px;
+    border-radius:16px; background:var(--clay-bg);
+    box-shadow: inset 4px 4px 8px var(--clay-dark), inset -4px -4px 8px var(--clay-light);
+  }
+  .login-field .ui-icon{color:var(--indigo); width:20px; height:20px;}
+  .login-field input{
+    margin:0; padding:14px 0; box-shadow:none; background:transparent; border-radius:0;
+  }
+  .login-field input:focus{box-shadow:none;}
   .login-status{
     display:none; align-items:center; justify-content:center; gap:8px;
     margin:-4px 0 12px; padding:10px 12px; border-radius:14px;
@@ -241,12 +250,25 @@
   .login-status.success{background:#DDF3E7; color:var(--success);}
   body.dark-mode .login-status.error{background:#4A2028;}
   body.dark-mode .login-status.success{background:#183C31;}
-  .category-bubbles{display:flex; gap:8px; margin:0 0 16px; flex-wrap:wrap;}
+  .category-bubbles{display:grid; grid-template-columns:repeat(3,1fr); gap:8px; margin:0 0 16px;}
   .category-bubbles button{
-    flex:1; min-width:88px; padding:11px 10px; border:none; border-radius:999px;
+    min-width:0; padding:12px 8px; border:none; border-radius:18px;
     background:var(--clay-bg); color:var(--muted); cursor:pointer;
-    font-family:'Sora',sans-serif; font-size:12px; font-weight:700;
+    display:flex; flex-direction:column; align-items:center; justify-content:center; gap:5px;
+    font-family:'Sora',sans-serif; font-size:11px; font-weight:700;
     box-shadow: 4px 4px 8px var(--clay-dark), -4px -4px 8px var(--clay-light);
+    transition:transform .14s ease, color .14s ease, box-shadow .14s ease;
+  }
+  .category-bubbles button:active{transform:scale(.96);}
+  .category-bubbles .ui-icon{width:20px; height:20px;}
+  .category-bubbles button span:last-child{white-space:nowrap;}
+  .category-bubbles button:nth-child(3) span:last-child{font-size:10px;}
+  .category-bubbles button.active .ui-icon{animation:iconBounce .38s ease;}
+  .login-submit{position:relative; overflow:hidden;}
+  .login-submit.loading::after{
+    content:''; position:absolute; inset:0;
+    background:linear-gradient(90deg, transparent, rgba(255,255,255,.28), transparent);
+    transform:translateX(-100%); animation:loginSweep 1s linear infinite;
   }
   .category-bubbles button.active{
     background:linear-gradient(135deg,#5B4BC4,#3D2E8C);
@@ -264,6 +286,13 @@
     0%{transform:scale(1);}
     45%{transform:scale(1.025);}
     100%{transform:scale(1);}
+  }
+  @keyframes iconBounce{
+    0%,100%{transform:translateY(0);}
+    45%{transform:translateY(-3px);}
+  }
+  @keyframes loginSweep{
+    to{transform:translateX(100%);}
   }
 
   .chip-row{display:flex; gap:10px; flex-wrap:wrap; margin-bottom:16px;}
@@ -484,25 +513,174 @@
 
 <script>
 /* =========================================================
-   FIREBASE CONFIG — bb-staff project (Realtime Database)
+   SUPABASE CONFIG
+   1) Run supabase-schema.sql in Supabase SQL Editor.
+   2) Paste your Project URL and anon/publishable key below.
    ========================================================= */
-const firebaseConfig = {
-  apiKey: "AIzaSyDsf4bzIHvtI-D9FkBY5ImYf9E7cmZc9R8",
-  authDomain: "bb-staff.firebaseapp.com",
-  databaseURL: "https://bb-staff-default-rtdb.asia-southeast1.firebasedatabase.app/",
-  projectId: "bb-staff",
-  storageBucket: "bb-staff.firebasestorage.app",
-  messagingSenderId: "799545974014",
-  appId: "1:799545974014:web:dbb2dbfd44e53cedbbd9af"
+const supabaseConfig = {
+  url: "https://rkhetoetjpxjpiagando.supabase.co",
+  anonKey: "sb_publishable_0mMkkw6Eswv1_ZaZ3f6bfw_7PS8P6lU"
 };
 
+let supabaseClient = null;
 let db = null;
-let firebaseReady = false;
+let supabaseReady = false;
+
+const firebase = {
+  database: {
+    ServerValue: {
+      TIMESTAMP: { __serverTimestamp: true }
+    }
+  }
+};
+
+class SupabaseSnapshot {
+  constructor(value){ this._value = value; }
+  exists(){ return this._value !== null && this._value !== undefined; }
+  val(){ return this._value; }
+}
+
+class SupabaseRef {
+  constructor(adapter, path){
+    this.adapter = adapter;
+    this.path = adapter.cleanPath(path || '');
+    this.key = this.path ? this.path.split('/').pop() : '';
+    this.channel = null;
+    this.limit = null;
+  }
+  child(childPath){ return new SupabaseRef(this.adapter, this.path ? `${this.path}/${childPath}` : childPath); }
+  push(){
+    const id = (crypto.randomUUID ? crypto.randomUUID() : String(Date.now()) + Math.random().toString(16).slice(2)).replace(/-/g,'');
+    return new SupabaseRef(this.adapter, this.path ? `${this.path}/${id}` : id);
+  }
+  limitToLast(n){ this.limit = n; return this; }
+  async once(event){
+    if (event !== 'value') throw new Error('Only value reads are supported.');
+    return new SupabaseSnapshot(await this.adapter.getTree(this.path, this.limit));
+  }
+  on(event, callback){
+    if (event !== 'value') throw new Error('Only value listeners are supported.');
+    const emit = async ()=> callback(new SupabaseSnapshot(await this.adapter.getTree(this.path, this.limit)));
+    emit();
+    this.channel = this.adapter.listen(this.path, emit);
+    return callback;
+  }
+  off(){
+    if (this.channel) this.adapter.removeChannel(this.channel);
+    this.channel = null;
+  }
+  set(value){ return this.adapter.set(this.path, value); }
+  update(value){ return this.adapter.update(this.path, value); }
+  remove(){ return this.adapter.remove(this.path); }
+}
+
+class SupabaseFirebaseAdapter {
+  constructor(client){ this.client = client; }
+  cleanPath(path){ return String(path || '').replace(/^\/+|\/+$/g,''); }
+  ref(path){ return new SupabaseRef(this, path); }
+  now(){ return Date.now(); }
+  normalize(value){
+    if (value && typeof value === 'object'){
+      if (value.__serverTimestamp) return this.now();
+      if (Array.isArray(value)) return value.map(v=>this.normalize(v));
+      const out = {};
+      Object.keys(value).forEach(k=>{ out[k] = this.normalize(value[k]); });
+      return out;
+    }
+    return value;
+  }
+  async rowsFor(path){
+    const clean = this.cleanPath(path);
+    let query = this.client.from('kv_store').select('path,value');
+    if (clean) query = query.or(`path.eq.${clean},path.like.${clean}/%`);
+    const { data, error } = await query;
+    if (error) throw error;
+    return data || [];
+  }
+  buildTree(path, rows, limit){
+    const clean = this.cleanPath(path);
+    let root = null;
+    rows.forEach(row=>{
+      if (row.path === clean){
+        root = this.clone(row.value);
+        return;
+      }
+      const relative = clean ? row.path.slice(clean.length + 1) : row.path;
+      if (!relative) return;
+      if (root === null || typeof root !== 'object' || Array.isArray(root)) root = {};
+      const parts = relative.split('/');
+      let node = root;
+      parts.forEach((part, idx)=>{
+        if (idx === parts.length - 1){
+          node[part] = this.clone(row.value);
+        } else {
+          if (!node[part] || typeof node[part] !== 'object' || Array.isArray(node[part])) node[part] = {};
+          node = node[part];
+        }
+      });
+    });
+    if (root && limit && typeof root === 'object' && !Array.isArray(root)){
+      const entries = Object.entries(root).slice(-limit);
+      root = Object.fromEntries(entries);
+    }
+    return root;
+  }
+  clone(value){ return value == null ? value : JSON.parse(JSON.stringify(value)); }
+  async getTree(path, limit){ return this.buildTree(path, await this.rowsFor(path), limit); }
+  async set(path, value){
+    const clean = this.cleanPath(path);
+    const normalized = this.normalize(value);
+    if (normalized === null || normalized === undefined) return this.remove(clean);
+    const { error } = await this.client.from('kv_store').upsert({
+      path: clean,
+      value: normalized,
+      updated_at: new Date().toISOString()
+    }, { onConflict: 'path' });
+    if (error) throw error;
+  }
+  async update(path, value){
+    const clean = this.cleanPath(path);
+    if (!clean){
+      await Promise.all(Object.keys(value || {}).map(k=>{
+        const v = value[k];
+        return v === null ? this.remove(k) : this.set(k, v);
+      }));
+      return;
+    }
+    const current = await this.getTree(clean) || {};
+    const next = (current && typeof current === 'object' && !Array.isArray(current)) ? current : {};
+    Object.keys(value || {}).forEach(k=>{
+      const v = this.normalize(value[k]);
+      if (v === null) delete next[k];
+      else next[k] = v;
+    });
+    await this.set(clean, next);
+  }
+  async remove(path){
+    const clean = this.cleanPath(path);
+    let query = this.client.from('kv_store').delete();
+    if (clean) query = query.or(`path.eq.${clean},path.like.${clean}/%`);
+    const { error } = await query;
+    if (error) throw error;
+  }
+  listen(path, callback){
+    const clean = this.cleanPath(path);
+    const channel = this.client.channel(`kv-${clean || 'root'}-${Math.random().toString(16).slice(2)}`)
+      .on('postgres_changes', { event:'*', schema:'public', table:'kv_store' }, payload=>{
+        const changed = payload.new?.path || payload.old?.path || '';
+        if (!clean || changed === clean || changed.startsWith(clean + '/') || clean.startsWith(changed + '/')) callback(payload);
+      })
+      .subscribe();
+    return channel;
+  }
+  removeChannel(channel){ this.client.removeChannel(channel); }
+}
+
 try {
-  if (firebaseConfig.apiKey !== "YOUR_API_KEY") {
-    firebase.initializeApp(firebaseConfig);
-    db = firebase.database();
-    firebaseReady = true;
+  if (supabaseConfig.url !== "YOUR_SUPABASE_URL" && supabaseConfig.anonKey !== "YOUR_SUPABASE_ANON_KEY") {
+    supabaseClient = supabase.createClient(supabaseConfig.url, supabaseConfig.anonKey);
+    db = new SupabaseFirebaseAdapter(supabaseClient);
+    supabaseReady = true;
   }
 } catch (e) { console.error(e); }
 
@@ -633,6 +811,15 @@ const state = {
   report: { staffId: 'all', range: 'today', empType: 'all' }
 };
 
+const PLAN_CATALOG = {
+  starter: { label: 'Starter', staffLimit: 5 },
+  growth: { label: 'Growth', staffLimit: 25 },
+  business: { label: 'Business', staffLimit: 100 },
+  enterprise: { label: 'Enterprise', staffLimit: 500 }
+};
+const DEFAULT_PLAN = 'starter';
+const DEFAULT_TRIAL_DAYS = 14;
+
 function toast(msg){
   const host = document.getElementById('toastHost');
   const el = document.createElement('div');
@@ -643,6 +830,65 @@ function toast(msg){
 }
 
 function go(screen){ state.screen = screen; state.error=''; render(); }
+
+function addDaysTs(days){
+  const d = new Date();
+  d.setDate(d.getDate() + Number(days || 0));
+  d.setHours(23, 59, 59, 999);
+  return d.getTime();
+}
+
+function parseDateInputToEndTs(value){
+  if (!value) return null;
+  const d = new Date(value + 'T23:59:59');
+  return isNaN(d.getTime()) ? null : d.getTime();
+}
+
+function formatDateInput(ts){
+  if (!ts) return '';
+  const d = new Date(ts);
+  if (isNaN(d.getTime())) return '';
+  const y = d.getFullYear();
+  const m = String(d.getMonth()+1).padStart(2,'0');
+  const day = String(d.getDate()).padStart(2,'0');
+  return `${y}-${m}-${day}`;
+}
+
+function formatAccountDate(ts){
+  if (!ts) return 'No expiry';
+  return new Date(ts).toLocaleDateString('en-IN', { day:'2-digit', month:'short', year:'numeric' });
+}
+
+function businessAccountInfo(biz){
+  const status = biz.accountStatus || 'trial';
+  const plan = biz.plan || DEFAULT_PLAN;
+  const expiry = status === 'active' ? biz.subscriptionEndsAt : biz.trialEndsAt;
+  const expired = (status === 'trial' || status === 'active') && expiry && Date.now() > expiry;
+  const effectiveStatus = expired ? 'expired' : status;
+  const staffLimit = Number(biz.staffLimit || (PLAN_CATALOG[plan] && PLAN_CATALOG[plan].staffLimit) || PLAN_CATALOG[DEFAULT_PLAN].staffLimit);
+  return { status, effectiveStatus, plan, expiry, staffLimit };
+}
+
+function accountStatusLabel(biz){
+  const info = businessAccountInfo(biz || {});
+  return {
+    trial: 'Trial',
+    active: 'Active',
+    suspended: 'Suspended',
+    expired: 'Expired'
+  }[info.effectiveStatus] || 'Trial';
+}
+
+function accountBadgeClass(biz){
+  const status = businessAccountInfo(biz || {}).effectiveStatus;
+  return status === 'active' ? 'badge-in' : status === 'trial' ? 'badge-half' : 'badge-out';
+}
+
+function assertBusinessCanUseApp(biz){
+  const info = businessAccountInfo(biz || {});
+  if (info.effectiveStatus === 'suspended') throw new Error('This business account is suspended. Contact main admin.');
+  if (info.effectiveStatus === 'expired') throw new Error('This business account has expired. Contact main admin to renew.');
+}
 
 function saveSession(session){
   try{ localStorage.setItem(SESSION_KEY, JSON.stringify(session)); }catch(e){}
@@ -690,6 +936,12 @@ async function registerBusiness(data){
     mobile: data.mobile,
     pin: data.pin,
     adminName: data.adminName,
+    plan: DEFAULT_PLAN,
+    accountStatus: 'trial',
+    staffLimit: PLAN_CATALOG[DEFAULT_PLAN].staffLimit,
+    trialEndsAt: addDaysTs(DEFAULT_TRIAL_DAYS),
+    subscriptionEndsAt: null,
+    sellerNotes: '',
     createdAt: firebase.database.ServerValue.TIMESTAMP
   });
   await db.ref('mobileIndex/' + data.mobile).set({ role: 'admin', businessId: bizRef.key });
@@ -711,16 +963,51 @@ async function loginUser(mobile, pin){
   if (idx.role === 'admin'){
     const bizSnap = await db.ref('businesses/' + idx.businessId).once('value');
     const biz = bizSnap.val();
+    assertBusinessCanUseApp(biz);
     if (biz.pin !== pin) throw new Error('Incorrect PIN.');
-    return { role:'admin', businessId: idx.businessId, name: biz.adminName, businessName: biz.name };
+    return {
+      role:'admin',
+      businessId: idx.businessId,
+      name: biz.adminName,
+      businessName: biz.name,
+      plan: biz.plan || DEFAULT_PLAN,
+      accountStatus: businessAccountInfo(biz).effectiveStatus,
+      staffLimit: businessAccountInfo(biz).staffLimit
+    };
   } else {
     const staffSnap = await db.ref('businesses/' + idx.businessId + '/staff/' + idx.staffId).once('value');
     const staff = staffSnap.val();
     if (staff.pin !== pin) throw new Error('Incorrect PIN.');
     const bizSnap = await db.ref('businesses/' + idx.businessId).once('value');
     const biz = bizSnap.val();
-    return { role:'staff', businessId: idx.businessId, staffId: idx.staffId, name: staff.name, businessName: biz.name, adminMobile: biz.mobile };
+    assertBusinessCanUseApp(biz);
+    return {
+      role:'staff',
+      businessId: idx.businessId,
+      staffId: idx.staffId,
+      name: staff.name,
+      businessName: biz.name,
+      adminMobile: biz.mobile,
+      plan: biz.plan || DEFAULT_PLAN,
+      accountStatus: businessAccountInfo(biz).effectiveStatus
+    };
   }
+}
+
+async function validateSavedSession(session){
+  if (!session || session.role === 'mainAdmin') return session;
+  const bizSnap = await db.ref('businesses/' + session.businessId).once('value');
+  const biz = bizSnap.val();
+  if (!biz) throw new Error('Business account not found.');
+  assertBusinessCanUseApp(biz);
+  const info = businessAccountInfo(biz);
+  return {
+    ...session,
+    businessName: biz.name || session.businessName,
+    plan: info.plan,
+    accountStatus: info.effectiveStatus,
+    staffLimit: info.staffLimit
+  };
 }
 
 async function getProfileDetails(session){
@@ -793,6 +1080,14 @@ async function updateProfilePhoto(session, photoData){
 async function addStaff(businessId, data){
   const mobileSnap = await db.ref('mobileIndex/' + data.mobile).once('value');
   if (mobileSnap.exists()) throw new Error('This mobile number is already registered elsewhere.');
+  const bizSnap = await db.ref('businesses/' + businessId).once('value');
+  const biz = bizSnap.val() || {};
+  assertBusinessCanUseApp(biz);
+  const staff = biz.staff || {};
+  const info = businessAccountInfo(biz);
+  if (Object.keys(staff).length >= info.staffLimit){
+    throw new Error(`Staff limit reached for ${PLAN_CATALOG[info.plan]?.label || 'this'} plan. Ask main admin to upgrade this business.`);
+  }
 
   const staffRef = db.ref('businesses/' + businessId + '/staff').push();
   await staffRef.set({
@@ -873,6 +1168,18 @@ function listenAllBusinesses(){
       return { id, ...biz, staffCount:Object.keys(staff).length, todayIn };
     }).sort((a,b)=>(b.createdAt||0)-(a.createdAt||0));
     if (['mainAdminHome','mainBusinessDetails'].includes(state.screen)) render();
+  });
+}
+
+async function updateBusinessAccount(businessId, data){
+  await db.ref('businesses/' + businessId).update({
+    plan: data.plan || DEFAULT_PLAN,
+    accountStatus: data.accountStatus || 'trial',
+    staffLimit: Number(data.staffLimit || PLAN_CATALOG[data.plan || DEFAULT_PLAN].staffLimit),
+    trialEndsAt: data.trialEndsAt || null,
+    subscriptionEndsAt: data.subscriptionEndsAt || null,
+    sellerNotes: data.sellerNotes || '',
+    updatedAt: firebase.database.ServerValue.TIMESTAMP
   });
 }
 
@@ -1160,14 +1467,12 @@ function scrollChatToBottom(){
 }
 
 /* ---------------------------------------------------------
-   PUSH NOTIFICATIONS (Firebase Cloud Messaging)
+   BROWSER NOTIFICATIONS
    Works even when the phone is locked / app is closed — unlike the
    plain Notification API above, which only fires while a tab is open.
-   Requires: firebase-messaging-sw.js at the site root + a VAPID key
-   from Firebase Console → Project Settings → Cloud Messaging.
+   Uses browser notifications while the app is open.
+   Background web push can be added later with a push provider.
    ---------------------------------------------------------- */
-const FCM_VAPID_KEY = "BF7MtkAA6pPFjO1ViyaKXJRYiF6MB_YAkGLPzNXW08G3MBadcerV10WuPtQDJYKVPW2sMBclsOCce7i5G32ruv4";
-
 function getPushSupportIssue(){
   const ua = navigator.userAgent || '';
   const isIOS = /iPad|iPhone|iPod/.test(ua) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
@@ -1185,54 +1490,21 @@ function getPushSupportIssue(){
 }
 
 async function setupPushNotifications(){
-  if (FCM_VAPID_KEY === "YOUR_VAPID_KEY"){
-    toast('Push notifications are not configured: missing VAPID key.');
-    return false;
-  }
-  const supportIssue = getPushSupportIssue();
-  if (supportIssue){
-    toast(supportIssue);
+  if (!('Notification' in window)){
+    toast('Notifications are not available in this browser.');
     return false;
   }
   try{
-    const registration = await navigator.serviceWorker.register('./firebase-messaging-sw.js');
-    await navigator.serviceWorker.ready;
     const permission = await Notification.requestPermission();
     if (permission !== 'granted'){
       toast('Notification permission was not allowed.');
       return false;
     }
-
-    const messaging = firebase.messaging();
-    const token = await messaging.getToken({ vapidKey: FCM_VAPID_KEY, serviceWorkerRegistration: registration });
-    if (token && state.session){
-      const tokenKey = Array.from(token).map(ch=>ch.charCodeAt(0).toString(16).padStart(2,'0')).join('').slice(0, 700);
-      const tokenData = {
-        token,
-        ua: navigator.userAgent || '',
-        updatedAt: firebase.database.ServerValue.TIMESTAMP
-      };
-      if (state.session.role === 'admin'){
-        await db.ref('businesses/' + state.session.businessId + '/adminFcmToken').set(token); // legacy single-device path
-        await db.ref('businesses/' + state.session.businessId + '/adminFcmTokens/' + tokenKey).set(tokenData);
-      } else {
-        await db.ref('businesses/' + state.session.businessId + '/staff/' + state.session.staffId + '/fcmToken').set(token); // legacy single-device path
-        await db.ref('businesses/' + state.session.businessId + '/staff/' + state.session.staffId + '/fcmTokens/' + tokenKey).set(tokenData);
-      }
-      toast('Push notifications enabled on this device.');
-    } else {
-      toast('Push token was not created. Try refreshing once.');
-      return false;
-    }
-    // Foreground messages (app open) - show as an in-app toast instead of a duplicate system popup
-    messaging.onMessage((payload)=>{
-      const n = payload.notification || {};
-      toast((n.title || 'New message') + (n.body ? ': ' + n.body : ''));
-    });
+    toast('Notifications enabled on this device.');
     return true;
   }catch(e){
-    console.error('Push setup failed:', e);
-    toast('Push setup failed: ' + (e && e.message ? e.message : 'check hosting/service worker'));
+    console.error('Notification setup failed:', e);
+    toast('Notification setup failed. Try again after refresh.');
     return false;
   }
 }
@@ -1240,37 +1512,46 @@ async function setupPushNotifications(){
    BOOTSTRAP — restore session + handle QR deep-link (?attend=businessId)
    --------------------------------------------------------- */
 async function bootstrap(){
-  if (!firebaseReady){ go('setup'); return; }
+  if (!supabaseReady){ go('setup'); return; }
 
   const urlParams = new URLSearchParams(window.location.search);
   const attendBiz = urlParams.get('attend');
-  const existing = loadSession();
+  let existing = loadSession();
 
   if (existing){
-    state.session = existing;
-    if (existing.role === 'mainAdmin'){
-      listenAllBusinesses();
-    } else if (existing.role === 'admin'){
-      listenStaff(existing.businessId);
-      listenAttendance(existing.businessId, null);
-      listenMeetings(existing.businessId);
-      listenLeaves(existing.businessId, null);
-      listenComplaints(existing.businessId, null);
-      listenApps(existing.businessId);
-      listenLiveLocations(existing.businessId);
-      listenAllChatsLastMessage(existing.businessId);
-      listenNotice(existing.businessId);
-      requestNotificationPermission();
-      setupPushNotifications();
-    } else {
-      listenAttendance(existing.businessId, existing.staffId);
-      listenMeetings(existing.businessId);
-      listenLeaves(existing.businessId, existing.staffId);
-      listenApps(existing.businessId);
-      startLiveLocationIfEnabled();
-      listenLocationRequests(existing.businessId, existing.staffId);
-      requestNotificationPermission();
-      setupPushNotifications();
+    try{
+      existing = await validateSavedSession(existing);
+      state.session = existing;
+      saveSession(existing);
+      if (existing.role === 'mainAdmin'){
+        listenAllBusinesses();
+      } else if (existing.role === 'admin'){
+        listenStaff(existing.businessId);
+        listenAttendance(existing.businessId, null);
+        listenMeetings(existing.businessId);
+        listenLeaves(existing.businessId, null);
+        listenComplaints(existing.businessId, null);
+        listenApps(existing.businessId);
+        listenLiveLocations(existing.businessId);
+        listenAllChatsLastMessage(existing.businessId);
+        listenNotice(existing.businessId);
+        requestNotificationPermission();
+        setupPushNotifications();
+      } else {
+        listenAttendance(existing.businessId, existing.staffId);
+        listenMeetings(existing.businessId);
+        listenLeaves(existing.businessId, existing.staffId);
+        listenApps(existing.businessId);
+        startLiveLocationIfEnabled();
+        listenLocationRequests(existing.businessId, existing.staffId);
+        requestNotificationPermission();
+        setupPushNotifications();
+      }
+    }catch(e){
+      clearSession();
+      state.session = null;
+      existing = null;
+      toast(e.message || 'Please log in again.');
     }
   }
 
@@ -1419,12 +1700,12 @@ function renderLoading(app){
 
 function renderSetup(app){
   app.innerHTML = `
-    ${topbar('Beaconblitz Staff','Connect Firebase','One-time setup before the app can run')}
+    ${topbar('Beaconblitz Staff','Connect Supabase','One-time setup before the app can run')}
     <div class="screen">
       <div class="config-warning">
-        This app needs a Firebase project with <strong>Realtime Database</strong> enabled.
-        Open this file and replace the <code>firebaseConfig</code> object near the top
-        of the &lt;script&gt; with your project's config. Then reload.
+        This app needs a Supabase project. Run <code>supabase-schema.sql</code> in the
+        Supabase SQL Editor, then replace <code>supabaseConfig</code> near the top of
+        this file with your Project URL and anon key. Then reload.
       </div>
     </div>`;
 }
@@ -1452,20 +1733,26 @@ function renderLogin(app){
       <div class="card login-card" id="loginCard">
         <label>Category</label>
         <div class="category-bubbles">
-          <button type="button" class="${state.role==='staff'?'active':''}" onclick="setRole('staff')">Staff</button>
-          <button type="button" class="${state.role==='admin'?'active':''}" onclick="setRole('admin')">Admin</button>
-          <button type="button" class="${state.role==='mainAdmin'?'active':''}" onclick="setRole('mainAdmin')">Main Admin</button>
+          <button type="button" class="${state.role==='staff'?'active':''}" onclick="setRole('staff')">${iconHTML('user')}<span>Staff</span></button>
+          <button type="button" class="${state.role==='admin'?'active':''}" onclick="setRole('admin')">${iconHTML('briefcase')}<span>Admin</span></button>
+          <button type="button" class="${state.role==='mainAdmin'?'active':''}" onclick="setRole('mainAdmin')">${iconHTML('grid')}<span>Main Admin</span></button>
         </div>
         <label>Phone number</label>
-        <input id="loginMobile" type="tel" maxlength="10" placeholder="9876543210">
+        <div class="login-field">
+          ${iconHTML('phone')}
+          <input id="loginMobile" type="tel" maxlength="10">
+        </div>
         <label>Password</label>
-        <input id="loginPin" type="password" maxlength="6" placeholder="Enter password">
+        <div class="login-field">
+          ${iconHTML('key')}
+          <input id="loginPin" type="password" maxlength="6">
+        </div>
         <div style="display:flex; align-items:center; gap:8px; margin:-6px 0 14px;">
           <input type="checkbox" id="rememberMe" checked style="width:auto; margin:0;">
           <label for="rememberMe" style="text-transform:none; font-weight:500; font-size:13px; letter-spacing:normal; margin:0; color:var(--muted);">Keep me logged in on this device</label>
         </div>
         <div class="login-status ${state.error ? 'show error' : ''}" id="loginStatus">${state.error ? `${iconHTML('x')} ${state.error}` : ''}</div>
-        <button class="btn btn-primary" id="loginBtn" onclick="doLogin()">Continue</button>
+        <button class="btn btn-primary login-submit" id="loginBtn" onclick="doLogin()">${iconHTML('send')}Continue</button>
         <div style="height:14px"></div>
         <button class="btn btn-ghost" onclick="state.pendingAttendBiz=null; go('landing')">← Back</button>
       </div>
@@ -1493,7 +1780,7 @@ async function doLogin(){
     return;
   }
   const btn = document.getElementById('loginBtn');
-  btn.disabled = true; btn.textContent = 'Checking...';
+  btn.disabled = true; btn.classList.add('loading'); btn.innerHTML = `${iconHTML('refresh')}Checking...`;
   try{
     const session = await loginUser(mobile, pin);
     animateLoginResult('success', 'Details correct. Opening...');
@@ -1538,7 +1825,7 @@ async function doLogin(){
     }
   }catch(e){
     state.error = e.message;
-    btn.disabled = false; btn.textContent = 'Continue';
+    btn.disabled = false; btn.classList.remove('loading'); btn.innerHTML = `${iconHTML('send')}Continue`;
     animateLoginResult('error', state.error || 'Incorrect user details.');
   }
 }
@@ -1585,7 +1872,15 @@ async function doRegister(){
   btn.disabled = true; btn.textContent = 'Creating...';
   try{
     const businessId = await registerBusiness(data);
-    const session = { role:'admin', businessId, name:data.adminName, businessName:data.businessName };
+    const session = {
+      role:'admin',
+      businessId,
+      name:data.adminName,
+      businessName:data.businessName,
+      plan: DEFAULT_PLAN,
+      accountStatus: 'trial',
+      staffLimit: PLAN_CATALOG[DEFAULT_PLAN].staffLimit
+    };
     state.session = session;
     const rememberMe = document.getElementById('regRememberMe').checked;
     if (rememberMe) saveSession(session); else clearSession();
@@ -1617,14 +1912,15 @@ function mainAdminNav(active){
 
 function renderMainAdminHome(app){
   const totalStaff = state.allBusinesses.reduce((sum,b)=>sum + (b.staffCount || 0), 0);
-  const todayIn = state.allBusinesses.reduce((sum,b)=>sum + (b.todayIn || 0), 0);
+  const activeBusinesses = state.allBusinesses.filter(b=>['active','trial'].includes(businessAccountInfo(b).effectiveStatus)).length;
+  const blockedBusinesses = state.allBusinesses.length - activeBusinesses;
   app.innerHTML = `
     ${topbar('Main Admin','All Businesses', `Welcome, ${state.session.name}`)}
     <div class="screen">
       <div class="stat-row">
-        <div class="stat"><div class="num">${state.allBusinesses.length}</div><div class="lbl">Businesses</div></div>
+        <div class="stat"><div class="num">${activeBusinesses}</div><div class="lbl">Active</div></div>
         <div class="stat"><div class="num">${totalStaff}</div><div class="lbl">Staff</div></div>
-        <div class="stat"><div class="num">${todayIn}</div><div class="lbl">Today In</div></div>
+        <div class="stat"><div class="num">${blockedBusinesses}</div><div class="lbl">Blocked</div></div>
       </div>
       <div class="card">
         ${state.allBusinesses.length===0 ? `<div class="empty">No businesses found.</div>` :
@@ -1638,8 +1934,8 @@ function renderMainAdminHome(app){
                 </div>
               </div>
               <div class="att-right">
-                <span class="badge badge-pending">${b.staffCount || 0} Staff</span>
-                <span class="staff-sub">${b.todayIn || 0} in today</span>
+                <span class="badge ${accountBadgeClass(b)}">${accountStatusLabel(b)}</span>
+                <span class="staff-sub">${PLAN_CATALOG[businessAccountInfo(b).plan]?.label || businessAccountInfo(b).plan} · ${b.staffCount || 0}/${businessAccountInfo(b).staffLimit} staff</span>
               </div>
             </div>
           `).join('')}
@@ -1659,6 +1955,8 @@ function renderMainBusinessDetails(app){
   if (!b){ go('mainAdminHome'); return; }
   const staff = Object.keys(b.staff || {}).map(id=>({ id, ...b.staff[id] }));
   const attendance = Object.keys(b.attendance || {}).map(id=>({ id, ...b.attendance[id] })).sort((a,b)=>(b.ts||0)-(a.ts||0));
+  const account = businessAccountInfo(b);
+  const planOptions = Object.keys(PLAN_CATALOG).map(key=>`<option value="${key}" ${account.plan===key?'selected':''}>${PLAN_CATALOG[key].label}</option>`).join('');
   app.innerHTML = `
     ${topbar('Business Details', b.name || 'Business', b.adminName || '')}
     <div class="screen">
@@ -1678,6 +1976,33 @@ function renderMainBusinessDetails(app){
           <div class="att-left"><div class="staff-sub">Sector</div><div class="staff-name" style="font-size:14px;">${escapeHTML(b.sector || 'Not set')}</div></div>
           <span style="color:var(--indigo);">${iconHTML('briefcase')}</span>
         </div>
+      </div>
+
+      <div class="card">
+        <div style="display:flex; justify-content:space-between; align-items:center; gap:10px; margin-bottom:14px;">
+          <div class="section-title" style="margin:0;">Account Control</div>
+          <span class="badge ${accountBadgeClass(b)}">${accountStatusLabel(b)}</span>
+        </div>
+        <label>Plan</label>
+        <select id="mainPlan" onchange="applyPlanDefaultLimit()">${planOptions}</select>
+        <label>Account status</label>
+        <select id="mainStatus">
+          <option value="trial" ${account.status==='trial'?'selected':''}>Trial</option>
+          <option value="active" ${account.status==='active'?'selected':''}>Active</option>
+          <option value="suspended" ${account.status==='suspended'?'selected':''}>Suspended</option>
+          <option value="expired" ${account.status==='expired'?'selected':''}>Expired</option>
+        </select>
+        <label>Staff limit</label>
+        <input id="mainStaffLimit" type="number" min="1" value="${account.staffLimit}">
+        <label>Trial ends</label>
+        <input id="mainTrialEnds" type="date" value="${formatDateInput(b.trialEndsAt)}">
+        <label>Subscription ends</label>
+        <input id="mainSubEnds" type="date" value="${formatDateInput(b.subscriptionEndsAt)}">
+        <label>Seller notes</label>
+        <textarea id="mainSellerNotes" rows="3" placeholder="Payment notes, follow-up, custom terms">${escapeHTML(b.sellerNotes || '')}</textarea>
+        ${state.error ? `<div class="error-text">${state.error}</div>` : ''}
+        <button class="btn btn-primary" id="mainAccountBtn" onclick="doSaveMainBusinessAccount()">${iconHTML('checkSquare')}Save Account</button>
+        <div class="staff-sub" style="margin-top:10px;">Expiry: ${formatAccountDate(account.expiry)} · Current usage: ${staff.length}/${account.staffLimit} staff</div>
       </div>
 
       <div class="card">
@@ -1722,6 +2047,44 @@ function renderMainBusinessDetails(app){
   `;
 }
 
+function applyPlanDefaultLimit(){
+  const plan = document.getElementById('mainPlan')?.value || DEFAULT_PLAN;
+  const limitInput = document.getElementById('mainStaffLimit');
+  if (limitInput && PLAN_CATALOG[plan]) limitInput.value = PLAN_CATALOG[plan].staffLimit;
+}
+
+async function doSaveMainBusinessAccount(){
+  const b = state.allBusinesses.find(x=>x.id===state.selectedBusinessId);
+  if (!b) return;
+  const plan = document.getElementById('mainPlan').value;
+  const accountStatus = document.getElementById('mainStatus').value;
+  const staffLimit = document.getElementById('mainStaffLimit').value;
+  const currentStaffCount = Object.keys(b.staff || {}).length;
+  if (!staffLimit || Number(staffLimit) < 1){
+    state.error = 'Staff limit must be at least 1.'; render(); return;
+  }
+  if (Number(staffLimit) < currentStaffCount){
+    state.error = `This business already has ${currentStaffCount} staff. Limit cannot be lower than current usage.`; render(); return;
+  }
+  const btn = document.getElementById('mainAccountBtn');
+  btn.disabled = true; btn.textContent = 'Saving...';
+  try{
+    await updateBusinessAccount(b.id, {
+      plan,
+      accountStatus,
+      staffLimit,
+      trialEndsAt: parseDateInputToEndTs(document.getElementById('mainTrialEnds').value),
+      subscriptionEndsAt: parseDateInputToEndTs(document.getElementById('mainSubEnds').value),
+      sellerNotes: document.getElementById('mainSellerNotes').value.trim()
+    });
+    toast('Business account updated');
+    state.error = '';
+  }catch(e){
+    state.error = e.message || 'Could not update business account.';
+  }
+  render();
+}
+
 function renderAdminHome(app){
   const businessId = state.session.businessId;
   const qrUrl = window.location.origin + window.location.pathname + '?attend=' + businessId;
@@ -1734,6 +2097,18 @@ function renderAdminHome(app){
         <div class="stat"><div class="num">${state.staffList.length}</div><div class="lbl">Staff</div></div>
         <div class="stat"><div class="num">${todayIn.length}</div><div class="lbl">Checked in today</div></div>
       </div>
+      ${state.session.accountStatus ? `
+        <div class="card">
+          <div style="display:flex; justify-content:space-between; align-items:center; gap:10px;">
+            <div>
+              <div class="staff-sub">Current plan</div>
+              <div class="staff-name">${PLAN_CATALOG[state.session.plan || DEFAULT_PLAN]?.label || state.session.plan || 'Starter'}</div>
+            </div>
+            <span class="badge ${state.session.accountStatus==='active'?'badge-in':state.session.accountStatus==='trial'?'badge-half':'badge-out'}">${state.session.accountStatus}</span>
+          </div>
+          <div class="staff-sub" style="margin-top:8px;">Staff usage: ${state.staffList.length}/${state.session.staffLimit || PLAN_CATALOG[DEFAULT_PLAN].staffLimit}</div>
+        </div>
+      ` : ''}
       ${notificationButtonHTML()}
       ${importantNoticeHTML()}
 
@@ -2033,10 +2408,12 @@ function renderAdminStaff(app){
 function setStaffFilter(f){ state.staffFilter = f; render(); }
 
 function renderAddStaff(app){
+  const staffLimit = state.session.staffLimit || PLAN_CATALOG[DEFAULT_PLAN].staffLimit;
   app.innerHTML = `
     ${topbar('Team','Add Staff','New staff get their own login PIN')}
     <div class="screen">
       <div class="card">
+        <div class="staff-sub" style="margin-bottom:14px;">Plan limit: ${state.staffList.length}/${staffLimit} staff</div>
         <label>Staff name</label>
         <input id="stName" placeholder="Full name">
         <label>Mobile number</label>
