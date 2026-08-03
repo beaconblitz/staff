@@ -1964,8 +1964,8 @@ function animateLoginResult(type, message){
 }
 
 async function doLogin(){
-  const mobile = document.getElementById('loginMobile').value.trim();
-  const pin = document.getElementById('loginPin').value.trim();
+  const mobile = document.getElementById('loginMobile').value.replace(/\D/g, '').slice(0, 10);
+  const pin = document.getElementById('loginPin').value.replace(/\D/g, '').slice(0, 4);
   const rememberMe = document.getElementById('rememberMe').checked;
   if (!mobile || !pin){
     state.error='Enter phone number and 4-digit PIN.';
