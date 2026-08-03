@@ -1053,7 +1053,9 @@ async function loginUser(mobile, pin){
     const biz = bizSnap.val();
     if (!biz) throw new Error('Business login record is missing. Ask main admin to reset this login.');
     assertBusinessCanUseApp(biz);
-    if (normalizePin(biz.pin) !== pin) throw new Error('Incorrect PIN.');
+    const pinSnap = await db.ref('businesses/' + idx.businessId + '/pin').once('value');
+    const storedPin = pinSnap.exists() ? pinSnap.val() : biz.pin;
+    if (normalizePin(storedPin) !== pin) throw new Error('Incorrect PIN.');
     return {
       role:'admin',
       businessId: idx.businessId,
@@ -1068,7 +1070,9 @@ async function loginUser(mobile, pin){
     const staffSnap = await db.ref('businesses/' + idx.businessId + '/staff/' + idx.staffId).once('value');
     const staff = staffSnap.val();
     if (!staff) throw new Error('Staff login record is missing. Ask admin to reset this login.');
-    if (normalizePin(staff.pin) !== pin) throw new Error('Incorrect PIN.');
+    const pinSnap = await db.ref('businesses/' + idx.businessId + '/staff/' + idx.staffId + '/pin').once('value');
+    const storedPin = pinSnap.exists() ? pinSnap.val() : staff.pin;
+    if (normalizePin(storedPin) !== pin) throw new Error('Incorrect PIN.');
     const bizSnap = await db.ref('businesses/' + idx.businessId).once('value');
     const biz = bizSnap.val();
     if (!biz) throw new Error('Business login record is missing. Ask admin to reset this login.');
