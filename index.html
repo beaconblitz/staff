@@ -1183,6 +1183,25 @@ async function updateBusinessAccount(businessId, data){
   });
 }
 
+async function updateBusinessAdminLogin(businessId, currentMobile, newMobile, newPin){
+  const cleanMobile = String(newMobile || '').trim();
+  const cleanPin = String(newPin || '').trim();
+  if (!/^\d{10}$/.test(cleanMobile)) throw new Error('Enter a valid 10 digit admin mobile number.');
+  if (!cleanPin) throw new Error('Enter a new admin password.');
+
+  if (cleanMobile !== currentMobile){
+    const mobileSnap = await db.ref('mobileIndex/' + cleanMobile).once('value');
+    if (mobileSnap.exists()) throw new Error('This mobile number is already used by another account.');
+  }
+
+  const updates = {};
+  updates['businesses/' + businessId + '/mobile'] = cleanMobile;
+  updates['businesses/' + businessId + '/pin'] = cleanPin;
+  if (currentMobile && currentMobile !== cleanMobile) updates['mobileIndex/' + currentMobile] = null;
+  updates['mobileIndex/' + cleanMobile] = { role:'admin', businessId };
+  await db.ref().update(updates);
+}
+
 function listenAttendance(businessId, staffId){
   if (state.attendanceListenerRef) state.attendanceListenerRef.off();
   const ref = db.ref('businesses/' + businessId + '/attendance').limitToLast(1000);
@@ -1979,6 +1998,16 @@ function renderMainBusinessDetails(app){
       </div>
 
       <div class="card">
+        <div class="section-title">Admin Login</div>
+        <label>Admin mobile number</label>
+        <input id="mainAdminMobile" type="tel" maxlength="10" value="${escapeHTML(b.mobile || '')}">
+        <label>New admin password</label>
+        <input id="mainAdminPin" type="password" maxlength="12" placeholder="Enter new password">
+        <button class="btn btn-marigold" id="mainAdminLoginBtn" onclick="doSaveMainBusinessAdminLogin()">${iconHTML('key')}Update Admin Login</button>
+        <div class="staff-sub" style="margin-top:10px;">This changes the admin login phone and password for this business.</div>
+      </div>
+
+      <div class="card">
         <div style="display:flex; justify-content:space-between; align-items:center; gap:10px; margin-bottom:14px;">
           <div class="section-title" style="margin:0;">Account Control</div>
           <span class="badge ${accountBadgeClass(b)}">${accountStatusLabel(b)}</span>
@@ -2081,6 +2110,27 @@ async function doSaveMainBusinessAccount(){
     state.error = '';
   }catch(e){
     state.error = e.message || 'Could not update business account.';
+  }
+  render();
+}
+
+async function doSaveMainBusinessAdminLogin(){
+  const b = state.allBusinesses.find(x=>x.id===state.selectedBusinessId);
+  if (!b) return;
+  const newMobile = document.getElementById('mainAdminMobile').value.trim();
+  const newPin = document.getElementById('mainAdminPin').value.trim();
+  const btn = document.getElementById('mainAdminLoginBtn');
+  btn.disabled = true; btn.textContent = 'Updating...';
+  try{
+    await updateBusinessAdminLogin(b.id, b.mobile || '', newMobile, newPin);
+    if (state.session && state.session.role === 'admin' && state.session.businessId === b.id){
+      state.session.adminMobile = newMobile;
+      saveSession(state.session);
+    }
+    toast('Admin login updated');
+    state.error = '';
+  }catch(e){
+    state.error = e.message || 'Could not update admin login.';
   }
   render();
 }
