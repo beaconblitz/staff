@@ -632,10 +632,41 @@ class SupabaseFirebaseAdapter {
   }
   clone(value){ return value == null ? value : JSON.parse(JSON.stringify(value)); }
   async getTree(path, limit){ return this.buildTree(path, await this.rowsFor(path), limit); }
+  flattenRows(path, value){
+    const clean = this.cleanPath(path);
+    const normalized = this.normalize(value);
+    const rows = [];
+    const walk = (currentPath, currentValue)=>{
+      if (currentValue && typeof currentValue === 'object' && !Array.isArray(currentValue)){
+        const keys = Object.keys(currentValue);
+        if (!keys.length){
+          rows.push({ path: currentPath, value: {} });
+          return;
+        }
+        keys.forEach(key=>walk(currentPath ? `${currentPath}/${key}` : key, currentValue[key]));
+        return;
+      }
+      rows.push({ path: currentPath, value: currentValue });
+    };
+    walk(clean, normalized);
+    return rows;
+  }
   async set(path, value){
     const clean = this.cleanPath(path);
     const normalized = this.normalize(value);
     if (normalized === null || normalized === undefined) return this.remove(clean);
+    if (normalized && typeof normalized === 'object' && !Array.isArray(normalized)){
+      await this.remove(clean);
+      const rows = this.flattenRows(clean, normalized).map(row=>({
+        path: row.path,
+        value: row.value,
+        updated_at: new Date().toISOString()
+      }));
+      if (!rows.length) return;
+      const { error } = await this.client.from('kv_store').upsert(rows, { onConflict: 'path' });
+      if (error) throw error;
+      return;
+    }
     const { error } = await this.client.from('kv_store').upsert({
       path: clean,
       value: normalized,
@@ -652,14 +683,11 @@ class SupabaseFirebaseAdapter {
       }));
       return;
     }
-    const current = await this.getTree(clean) || {};
-    const next = (current && typeof current === 'object' && !Array.isArray(current)) ? current : {};
-    Object.keys(value || {}).forEach(k=>{
+    await Promise.all(Object.keys(value || {}).map(k=>{
       const v = this.normalize(value[k]);
-      if (v === null) delete next[k];
-      else next[k] = v;
-    });
-    await this.set(clean, next);
+      const childPath = clean ? `${clean}/${k}` : k;
+      return v === null ? this.remove(childPath) : this.set(childPath, v);
+    }));
   }
   async remove(path){
     const clean = this.cleanPath(path);
