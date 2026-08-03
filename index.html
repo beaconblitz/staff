@@ -782,6 +782,7 @@ const state = {
   apps: [],
   liveLocations: [],
   allBusinesses: [],
+  mainAdmins: [],
   staffListenerRef: null,
   attendanceListenerRef: null,
   meetingsListenerRef: null,
@@ -790,6 +791,7 @@ const state = {
   appsListenerRef: null,
   liveLocationsListenerRef: null,
   allBusinessesListenerRef: null,
+  mainAdminsListenerRef: null,
   locationRequestListenerRef: null,
   chatListenerRef: null,
   allChatsListenerRef: null,
@@ -1219,6 +1221,18 @@ function listenAllBusinesses(){
   });
 }
 
+function listenMainAdmins(){
+  if (state.mainAdminsListenerRef) state.mainAdminsListenerRef.off();
+  const ref = db.ref('mainAdmins');
+  state.mainAdminsListenerRef = ref;
+  ref.on('value', snap=>{
+    const val = snap.val() || {};
+    state.mainAdmins = Object.keys(val).map(mobile=>({ mobile, ...(val[mobile] || {}) }))
+      .sort((a,b)=>String(a.name || '').localeCompare(String(b.name || '')));
+    if (state.screen === 'mainAdminHome') render();
+  });
+}
+
 async function updateBusinessAccount(businessId, data){
   await db.ref('businesses/' + businessId).update({
     plan: data.plan || DEFAULT_PLAN,
@@ -1592,6 +1606,7 @@ async function bootstrap(){
       saveSession(existing);
       if (existing.role === 'mainAdmin'){
         listenAllBusinesses();
+        listenMainAdmins();
       } else if (existing.role === 'admin'){
         listenStaff(existing.businessId);
         listenAttendance(existing.businessId, null);
@@ -1800,6 +1815,7 @@ function renderLanding(app){
 function setRole(r){ state.role = r; render(); }
 
 function renderLogin(app){
+  if (state.role === 'mainAdmin') state.role = 'admin';
   const loginTitle = state.role === 'mainAdmin' ? 'Main Admin Login' : (state.role==='admin' ? 'Admin Login' : 'Staff Login');
   const loginSub = state.pendingAttendBiz ? 'Log in to confirm your attendance scan' : (state.role === 'mainAdmin' ? 'Enter your main admin mobile number and PIN' : 'Enter your mobile number and PIN');
   app.innerHTML = `
@@ -1807,10 +1823,9 @@ function renderLogin(app){
     <div class="screen">
       <div class="card login-card" id="loginCard">
         <label>Category</label>
-        <div class="category-bubbles">
+        <div class="category-bubbles" style="grid-template-columns:repeat(2,1fr);">
           <button type="button" class="${state.role==='staff'?'active':''}" onclick="setRole('staff')">${iconHTML('user')}<span>Staff</span></button>
           <button type="button" class="${state.role==='admin'?'active':''}" onclick="setRole('admin')">${iconHTML('briefcase')}<span>Admin</span></button>
-          <button type="button" class="${state.role==='mainAdmin'?'active':''}" onclick="setRole('mainAdmin')">${iconHTML('grid')}<span>Main Admin</span></button>
         </div>
         <label>Phone number</label>
         <div class="login-field">
@@ -1864,6 +1879,7 @@ async function doLogin(){
     if (rememberMe) saveSession(session); else clearSession();
     if (session.role === 'mainAdmin'){
       listenAllBusinesses();
+      listenMainAdmins();
       go('mainAdminHome');
     } else if (session.role === 'admin'){
       listenStaff(session.businessId);
@@ -2053,6 +2069,23 @@ function renderMainAdminHome(app){
         <div class="stat"><div class="num">${blockedBusinesses}</div><div class="lbl">Blocked</div></div>
       </div>
       <button class="btn btn-marigold" onclick="go('mainCreateBusiness')">${iconHTML('plus')}Create Customer Business</button>
+      <div class="card">
+        <div class="section-title">Main Admin Logins</div>
+        ${state.mainAdmins.length===0 ? `<div class="empty">No main admin login found.</div>` :
+          state.mainAdmins.map(a=>`
+            <div class="attendance-item">
+              <div class="att-left">
+                <div class="staff-name" style="font-size:14px;">${escapeHTML(a.name || 'Main Admin')}</div>
+                <div class="staff-sub">ID: ${escapeHTML(a.mobile || '')}</div>
+              </div>
+              <div class="att-right">
+                <span class="badge badge-pending">Password</span>
+                <span class="staff-sub mono">${escapeHTML(a.pin || '')}</span>
+              </div>
+            </div>
+          `).join('')}
+        <div class="staff-sub" style="margin-top:10px;">This section is visible only after main admin login.</div>
+      </div>
       <div class="card">
         ${state.allBusinesses.length===0 ? `<div class="empty">No businesses found.</div>` :
           state.allBusinesses.map(b=>`
@@ -2386,6 +2419,7 @@ function doLogout(){
   if (state.attendanceListenerRef) state.attendanceListenerRef.off();
   if (state.liveLocationsListenerRef) state.liveLocationsListenerRef.off();
   if (state.allBusinessesListenerRef) state.allBusinessesListenerRef.off();
+  if (state.mainAdminsListenerRef) state.mainAdminsListenerRef.off();
   if (state.locationRequestListenerRef) state.locationRequestListenerRef.off();
   if (state.chatListenerRef) state.chatListenerRef.off();
   if (state.allChatsListenerRef) state.allChatsListenerRef.off();
@@ -2396,6 +2430,7 @@ function doLogout(){
   state.profileDetails = null;
   state.profileLoadedFor = '';
   state.allBusinesses = [];
+  state.mainAdmins = [];
   state.selectedBusinessId = '';
   clearSession();
   go('landing');
