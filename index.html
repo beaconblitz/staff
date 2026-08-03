@@ -1029,7 +1029,7 @@ async function loginUser(mobile, pin){
   const mainAdminSnap = await db.ref('mainAdmins/' + mobile).once('value');
   if (mainAdminSnap.exists()){
     const mainAdmin = mainAdminSnap.val() || {};
-    if (mainAdmin.pin !== pin) throw new Error('Incorrect PIN.');
+    if (String(mainAdmin.pin || '') !== pin) throw new Error('Incorrect PIN.');
     return { role:'mainAdmin', mobile, name: mainAdmin.name || 'Main Admin' };
   }
 
@@ -1041,7 +1041,7 @@ async function loginUser(mobile, pin){
     const adminSnap = await db.ref('mainAdmins/' + mobile).once('value');
     const admin = adminSnap.val();
     if (!admin) throw new Error('Main admin login record is missing. Run the login reset SQL again.');
-    if (admin.pin !== pin) throw new Error('Incorrect PIN.');
+    if (String(admin.pin || '') !== pin) throw new Error('Incorrect PIN.');
     return { role:'mainAdmin', mobile, name: admin.name || 'Main Admin' };
   }
 
@@ -1050,7 +1050,7 @@ async function loginUser(mobile, pin){
     const biz = bizSnap.val();
     if (!biz) throw new Error('Business login record is missing. Ask main admin to reset this login.');
     assertBusinessCanUseApp(biz);
-    if (biz.pin !== pin) throw new Error('Incorrect PIN.');
+    if (String(biz.pin || '') !== pin) throw new Error('Incorrect PIN.');
     return {
       role:'admin',
       businessId: idx.businessId,
@@ -1065,7 +1065,7 @@ async function loginUser(mobile, pin){
     const staffSnap = await db.ref('businesses/' + idx.businessId + '/staff/' + idx.staffId).once('value');
     const staff = staffSnap.val();
     if (!staff) throw new Error('Staff login record is missing. Ask admin to reset this login.');
-    if (staff.pin !== pin) throw new Error('Incorrect PIN.');
+    if (String(staff.pin || '') !== pin) throw new Error('Incorrect PIN.');
     const bizSnap = await db.ref('businesses/' + idx.businessId).once('value');
     const biz = bizSnap.val();
     if (!biz) throw new Error('Business login record is missing. Ask admin to reset this login.');
