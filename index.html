@@ -600,7 +600,12 @@ class SupabaseFirebaseAdapter {
   buildTree(path, rows, limit){
     const clean = this.cleanPath(path);
     let root = null;
-    rows.forEach(row=>{
+    const orderedRows = (rows || []).slice().sort((a,b)=>{
+      if (a.path === clean && b.path !== clean) return -1;
+      if (b.path === clean && a.path !== clean) return 1;
+      return 0;
+    });
+    orderedRows.forEach(row=>{
       if (row.path === clean){
         root = this.clone(row.value);
         return;
@@ -821,6 +826,7 @@ const PLAN_CATALOG = {
 };
 const DEFAULT_PLAN = 'starter';
 const DEFAULT_TRIAL_DAYS = 14;
+const PIN_PATTERN = /^\d{4}$/;
 const APP_SUPPORT = {
   whatsapp: '919999999999',
   email: 'support@beaconblitz.in',
@@ -925,6 +931,12 @@ function downloadTextFile(filename, text, type){
   setTimeout(()=>URL.revokeObjectURL(url), 500);
 }
 
+async function removeExactKvPath(path){
+  if (!supabaseClient) return;
+  const { error } = await supabaseClient.from('kv_store').delete().eq('path', path);
+  if (error) throw error;
+}
+
 function saveSession(session){
   try{ localStorage.setItem(SESSION_KEY, JSON.stringify(session)); }catch(e){}
 }
@@ -979,7 +991,9 @@ async function registerBusiness(data){
     sellerNotes: '',
     createdAt: firebase.database.ServerValue.TIMESTAMP
   });
-  await db.ref('mobileIndex/' + data.mobile).set({ role: 'admin', businessId: bizRef.key });
+  await removeExactKvPath('mobileIndex/' + data.mobile);
+  await db.ref('mobileIndex/' + data.mobile + '/role').set('admin');
+  await db.ref('mobileIndex/' + data.mobile + '/businessId').set(bizRef.key);
   return bizRef.key;
 }
 
@@ -1139,7 +1153,10 @@ async function addStaff(businessId, data){
     employmentType: data.employmentType || 'full',
     createdAt: firebase.database.ServerValue.TIMESTAMP
   });
-  await db.ref('mobileIndex/' + data.mobile).set({ role:'staff', businessId, staffId: staffRef.key });
+  await removeExactKvPath('mobileIndex/' + data.mobile);
+  await db.ref('mobileIndex/' + data.mobile + '/role').set('staff');
+  await db.ref('mobileIndex/' + data.mobile + '/businessId').set(businessId);
+  await db.ref('mobileIndex/' + data.mobile + '/staffId').set(staffRef.key);
   return staffRef.key;
 }
 
@@ -1149,7 +1166,7 @@ async function updateStaff(businessId, staffId, data){
   const cleanMobile = String(data.mobile || existing.mobile || '').trim();
   const cleanPin = String(data.pin || existing.pin || '').trim();
   if (!/^\d{10}$/.test(cleanMobile)) throw new Error('Enter a valid 10 digit staff mobile number.');
-  if (!cleanPin) throw new Error('Enter staff login password.');
+  if (!PIN_PATTERN.test(cleanPin)) throw new Error('Staff PIN must be exactly 4 numbers.');
   if (cleanMobile !== existing.mobile){
     const mobileSnap = await db.ref('mobileIndex/' + cleanMobile).once('value');
     if (mobileSnap.exists()) throw new Error('This mobile number is already used by another account.');
@@ -1166,7 +1183,10 @@ async function updateStaff(businessId, staffId, data){
   updates['businesses/' + businessId + '/staff/' + staffId + '/monthlySalary'] = data.monthlySalary != null && data.monthlySalary !== '' ? Number(data.monthlySalary) : 0;
   updates['businesses/' + businessId + '/staff/' + staffId + '/employmentType'] = data.employmentType || 'full';
   if (existing.mobile && existing.mobile !== cleanMobile) updates['mobileIndex/' + existing.mobile] = null;
-  updates['mobileIndex/' + cleanMobile] = { role:'staff', businessId, staffId };
+  await removeExactKvPath('mobileIndex/' + cleanMobile);
+  updates['mobileIndex/' + cleanMobile + '/role'] = 'staff';
+  updates['mobileIndex/' + cleanMobile + '/businessId'] = businessId;
+  updates['mobileIndex/' + cleanMobile + '/staffId'] = staffId;
   await db.ref().update(updates);
 }
 
@@ -1233,6 +1253,32 @@ function listenMainAdmins(){
   });
 }
 
+async function updateMainAdminLogin(currentMobile, data){
+  const cleanMobile = String(data.mobile || '').trim();
+  const cleanPin = String(data.pin || '').trim();
+  const cleanName = String(data.name || 'Main Admin').trim() || 'Main Admin';
+  if (!/^\d{10}$/.test(cleanMobile)) throw new Error('Enter a valid 10 digit main admin mobile number.');
+  if (!PIN_PATTERN.test(cleanPin)) throw new Error('Main admin PIN must be exactly 4 numbers.');
+
+  const existingSnap = await db.ref('mainAdmins/' + currentMobile).once('value');
+  const existing = existingSnap.val() || {};
+  if (cleanMobile !== currentMobile){
+    const [mainSnap, indexSnap] = await Promise.all([
+      db.ref('mainAdmins/' + cleanMobile).once('value'),
+      db.ref('mobileIndex/' + cleanMobile).once('value')
+    ]);
+    if (mainSnap.exists() || indexSnap.exists()) throw new Error('This mobile number is already used by another account.');
+    await db.ref('mainAdmins/' + currentMobile).remove();
+  }
+
+  await db.ref('mainAdmins/' + cleanMobile).set({
+    ...existing,
+    name: cleanName,
+    pin: cleanPin,
+    profilePhoto: existing.profilePhoto || null
+  });
+}
+
 async function updateBusinessAccount(businessId, data){
   await db.ref('businesses/' + businessId).update({
     plan: data.plan || DEFAULT_PLAN,
@@ -1249,7 +1295,7 @@ async function updateBusinessAdminLogin(businessId, currentMobile, newMobile, ne
   const cleanMobile = String(newMobile || '').trim();
   const cleanPin = String(newPin || '').trim();
   if (!/^\d{10}$/.test(cleanMobile)) throw new Error('Enter a valid 10 digit admin mobile number.');
-  if (!cleanPin) throw new Error('Enter a new admin password.');
+  if (!PIN_PATTERN.test(cleanPin)) throw new Error('Admin PIN must be exactly 4 numbers.');
 
   if (cleanMobile !== currentMobile){
     const mobileSnap = await db.ref('mobileIndex/' + cleanMobile).once('value');
@@ -1260,7 +1306,9 @@ async function updateBusinessAdminLogin(businessId, currentMobile, newMobile, ne
   updates['businesses/' + businessId + '/mobile'] = cleanMobile;
   updates['businesses/' + businessId + '/pin'] = cleanPin;
   if (currentMobile && currentMobile !== cleanMobile) updates['mobileIndex/' + currentMobile] = null;
-  updates['mobileIndex/' + cleanMobile] = { role:'admin', businessId };
+  await removeExactKvPath('mobileIndex/' + cleanMobile);
+  updates['mobileIndex/' + cleanMobile + '/role'] = 'admin';
+  updates['mobileIndex/' + cleanMobile + '/businessId'] = businessId;
   await db.ref().update(updates);
 }
 
@@ -1801,7 +1849,7 @@ function renderLanding(app){
     <div class="screen">
       <div class="card">
         <div class="login-choice-title">Sign in</div>
-        <p class="login-choice-copy">Choose your category on the next screen and continue with phone number and password.</p>
+        <p class="login-choice-copy">Choose your category on the next screen and continue with phone number and 4-digit PIN.</p>
         <button class="btn btn-primary" onclick="go('login')">${iconHTML('user')}Log in</button>
         <div style="height:10px"></div><button class="btn btn-outline" onclick="go('registerBiz')">Register a new business</button>
         <div style="height:10px"></div>
@@ -1817,7 +1865,7 @@ function setRole(r){ state.role = r; render(); }
 function renderLogin(app){
   if (state.role === 'mainAdmin') state.role = 'admin';
   const loginTitle = state.role === 'mainAdmin' ? 'Main Admin Login' : (state.role==='admin' ? 'Admin Login' : 'Staff Login');
-  const loginSub = state.pendingAttendBiz ? 'Log in to confirm your attendance scan' : (state.role === 'mainAdmin' ? 'Enter your main admin mobile number and PIN' : 'Enter your mobile number and PIN');
+  const loginSub = state.pendingAttendBiz ? 'Log in to confirm your attendance scan' : 'Enter your mobile number and 4-digit PIN';
   app.innerHTML = `
         ${topbar('Log in', loginTitle, loginSub)}
     <div class="screen">
@@ -1832,10 +1880,10 @@ function renderLogin(app){
           ${iconHTML('phone')}
           <input id="loginMobile" type="tel" maxlength="10">
         </div>
-        <label>Password</label>
+        <label>4-digit PIN</label>
         <div class="login-field">
           ${iconHTML('key')}
-          <input id="loginPin" type="password" maxlength="6">
+          <input id="loginPin" type="password" maxlength="4" inputmode="numeric">
         </div>
         <div style="display:flex; align-items:center; gap:8px; margin:-6px 0 14px;">
           <input type="checkbox" id="rememberMe" checked style="width:auto; margin:0;">
@@ -1865,7 +1913,7 @@ async function doLogin(){
   const pin = document.getElementById('loginPin').value.trim();
   const rememberMe = document.getElementById('rememberMe').checked;
   if (!mobile || !pin){
-    state.error='Enter phone number and password.';
+    state.error='Enter phone number and 4-digit PIN.';
     animateLoginResult('error', state.error);
     return;
   }
@@ -1934,8 +1982,8 @@ function renderRegisterBiz(app){
         <input id="regSector" placeholder="e.g. Retail, Marketing Agency">
         <label>Mobile number</label>
         <input id="regMobile" type="tel" maxlength="10" placeholder="9876543210">
-        <label>Create a PIN</label>
-        <input id="regPin" type="password" maxlength="6" placeholder="4-digit PIN">
+        <label>Create a 4-digit PIN</label>
+        <input id="regPin" type="password" maxlength="4" inputmode="numeric" placeholder="4-digit PIN">
         <div style="display:flex; align-items:flex-start; gap:8px; margin:-6px 0 14px;">
           <input type="checkbox" id="regTerms" style="width:auto; margin:2px 0 0;">
           <label for="regTerms" style="text-transform:none; font-weight:500; font-size:13px; letter-spacing:normal; margin:0; color:var(--muted);">I agree to Terms, Privacy, and staff location consent rules.</label>
@@ -1963,6 +2011,7 @@ async function doRegister(){
   if (!data.adminName || !data.businessName || !data.mobile || !data.pin){
     state.error = 'Please fill in all required fields.'; render(); return;
   }
+  if (!PIN_PATTERN.test(data.pin)){ state.error = 'PIN must be exactly 4 numbers.'; render(); return; }
   if (!document.getElementById('regTerms').checked){
     state.error = 'Please accept Terms and Privacy before creating a business.'; render(); return;
   }
@@ -2079,10 +2128,18 @@ function renderMainAdminHome(app){
                 <div class="staff-sub">ID: ${escapeHTML(a.mobile || '')}</div>
               </div>
               <div class="att-right">
-                <span class="badge badge-pending">Password</span>
+                <span class="badge badge-pending">PIN</span>
                 <span class="staff-sub mono">${escapeHTML(a.pin || '')}</span>
               </div>
             </div>
+            <label>Main admin name</label>
+            <input id="mainOwnerName_${a.mobile}" value="${escapeHTML(a.name || 'Main Admin')}">
+            <label>Main admin ID / mobile</label>
+            <input id="mainOwnerMobile_${a.mobile}" type="tel" maxlength="10" value="${escapeHTML(a.mobile || '')}">
+            <label>Main admin PIN</label>
+        <input id="mainOwnerPin_${a.mobile}" type="password" maxlength="4" inputmode="numeric" value="${escapeHTML(a.pin || '')}">
+            <button class="btn btn-outline" id="mainOwnerBtn_${a.mobile}" onclick="doSaveMainAdminLogin('${a.mobile}')">${iconHTML('key')}Update Main Admin Login</button>
+            <div style="height:16px"></div>
           `).join('')}
         <div class="staff-sub" style="margin-top:10px;">This section is visible only after main admin login.</div>
       </div>
@@ -2127,8 +2184,8 @@ function renderMainCreateBusiness(app){
         <input id="mainRegSector" placeholder="Retail, agency, service, etc.">
         <label>Admin mobile number</label>
         <input id="mainRegMobile" type="tel" maxlength="10">
-        <label>Admin password</label>
-        <input id="mainRegPin" type="password" maxlength="12">
+        <label>Admin PIN</label>
+        <input id="mainRegPin" type="password" maxlength="4" inputmode="numeric">
         <div class="config-warning" style="margin-bottom:14px;">Confirm the customer has agreed to Terms, Privacy, and staff location consent before onboarding.</div>
         ${state.error ? `<div class="error-text">${state.error}</div>` : ''}
         <button class="btn btn-marigold" id="mainCreateBizBtn" onclick="doMainCreateBusiness()">${iconHTML('plus')}Create Customer</button>
@@ -2148,8 +2205,9 @@ async function doMainCreateBusiness(){
     pin: document.getElementById('mainRegPin').value.trim()
   };
   if (!data.adminName || !data.businessName || !data.mobile || !data.pin){
-    state.error = 'Admin name, business, mobile and password are required.'; render(); return;
+    state.error = 'Admin name, business, mobile and PIN are required.'; render(); return;
   }
+  if (!PIN_PATTERN.test(data.pin)){ state.error = 'PIN must be exactly 4 numbers.'; render(); return; }
   const btn = document.getElementById('mainCreateBizBtn');
   btn.disabled = true; btn.textContent = 'Creating...';
   try{
@@ -2160,6 +2218,27 @@ async function doMainCreateBusiness(){
   }catch(e){
     state.error = e.message || 'Could not create customer.'; render();
   }
+}
+
+async function doSaveMainAdminLogin(currentMobile){
+  const mobile = document.getElementById('mainOwnerMobile_' + currentMobile).value.trim();
+  const pin = document.getElementById('mainOwnerPin_' + currentMobile).value.trim();
+  const name = document.getElementById('mainOwnerName_' + currentMobile).value.trim();
+  const btn = document.getElementById('mainOwnerBtn_' + currentMobile);
+  btn.disabled = true; btn.textContent = 'Updating...';
+  try{
+    await updateMainAdminLogin(currentMobile, { mobile, pin, name });
+    if (state.session && state.session.role === 'mainAdmin' && state.session.mobile === currentMobile){
+      state.session.mobile = mobile;
+      state.session.name = name || 'Main Admin';
+      saveSession(state.session);
+    }
+    toast('Main admin login updated');
+    state.error = '';
+  }catch(e){
+    state.error = e.message || 'Could not update main admin login.';
+  }
+  render();
 }
 
 function renderMainBusinessDetails(app){
@@ -2194,10 +2273,10 @@ function renderMainBusinessDetails(app){
         <div class="section-title">Admin Login</div>
         <label>Admin mobile number</label>
         <input id="mainAdminMobile" type="tel" maxlength="10" value="${escapeHTML(b.mobile || '')}">
-        <label>New admin password</label>
-        <input id="mainAdminPin" type="password" maxlength="12" placeholder="Enter new password">
+        <label>New admin PIN</label>
+        <input id="mainAdminPin" type="password" maxlength="4" inputmode="numeric" placeholder="Enter 4-digit PIN">
         <button class="btn btn-marigold" id="mainAdminLoginBtn" onclick="doSaveMainBusinessAdminLogin()">${iconHTML('key')}Update Admin Login</button>
-        <div class="staff-sub" style="margin-top:10px;">This changes the admin login phone and password for this business.</div>
+        <div class="staff-sub" style="margin-top:10px;">This changes the admin login phone and 4-digit PIN for this business.</div>
       </div>
 
       <div class="card">
@@ -2240,6 +2319,25 @@ function renderMainBusinessDetails(app){
                 </div>
               </div>
             </div>
+          `).join('')}
+      </div>
+
+      <div class="card">
+        <div class="section-title">Staff Login Controls</div>
+        ${staff.length===0 ? `<div class="empty">No staff added.</div>` :
+          staff.map(s=>`
+            <div class="attendance-item">
+              <div class="att-left">
+                <div class="staff-name" style="font-size:14px;">${escapeHTML(s.name || 'Staff')}</div>
+                <div class="staff-sub">${escapeHTML(s.mobile || '')}</div>
+              </div>
+            </div>
+            <label>Staff login mobile</label>
+            <input id="mainStaffMobile_${s.id}" type="tel" maxlength="10" value="${escapeHTML(s.mobile || '')}">
+            <label>Staff PIN</label>
+            <input id="mainStaffPin_${s.id}" type="password" maxlength="4" inputmode="numeric" value="${escapeHTML(s.pin || '')}">
+            <button class="btn btn-outline" id="mainStaffLoginBtn_${s.id}" onclick="doMainSaveStaffLogin('${s.id}')">${iconHTML('key')}Update Staff Login</button>
+            <div style="height:16px"></div>
           `).join('')}
       </div>
 
@@ -2324,6 +2422,36 @@ async function doSaveMainBusinessAdminLogin(){
     state.error = '';
   }catch(e){
     state.error = e.message || 'Could not update admin login.';
+  }
+  render();
+}
+
+async function doMainSaveStaffLogin(staffId){
+  const b = state.allBusinesses.find(x=>x.id===state.selectedBusinessId);
+  if (!b) return;
+  const staff = (b.staff || {})[staffId];
+  if (!staff) return;
+  const newMobile = document.getElementById('mainStaffMobile_' + staffId).value.trim();
+  const newPin = document.getElementById('mainStaffPin_' + staffId).value.trim();
+  const btn = document.getElementById('mainStaffLoginBtn_' + staffId);
+  btn.disabled = true; btn.textContent = 'Updating...';
+  try{
+    await updateStaff(b.id, staffId, {
+      ...staff,
+      mobile: newMobile,
+      pin: newPin,
+      name: staff.name || 'Staff',
+      designation: staff.designation || '',
+      employmentType: staff.employmentType || 'full',
+      expectedCheckIn: staff.expectedCheckIn || '09:30',
+      expectedCheckOut: staff.expectedCheckOut || '18:00',
+      graceMinutes: staff.graceMinutes != null ? staff.graceMinutes : 30,
+      monthlySalary: staff.monthlySalary != null ? staff.monthlySalary : 0
+    });
+    toast('Staff login updated');
+    state.error = '';
+  }catch(e){
+    state.error = e.message || 'Could not update staff login.';
   }
   render();
 }
@@ -2517,14 +2645,14 @@ function renderProfile(app){
       ` : ''}
 
       <div class="card">
-        <div class="section-title">${iconHTML('key')} Change Password</div>
-        <div class="staff-sub" style="margin-bottom:14px;">Use a new PIN for your next login.</div>
+        <div class="section-title">${iconHTML('key')} Change PIN</div>
+        <div class="staff-sub" style="margin-bottom:14px;">Use a new 4-digit PIN for your next login.</div>
         <label>Current PIN</label>
-        <input id="currentPin" type="password" maxlength="6" placeholder="Current PIN">
-        <label>New PIN</label>
-        <input id="newPin" type="password" maxlength="6" placeholder="New 4-6 digit PIN">
+        <input id="currentPin" type="password" maxlength="4" inputmode="numeric" placeholder="Current 4-digit PIN">
+        <label>New 4-digit PIN</label>
+        <input id="newPin" type="password" maxlength="4" inputmode="numeric" placeholder="New 4-digit PIN">
         <label>Confirm New PIN</label>
-        <input id="confirmNewPin" type="password" maxlength="6" placeholder="Repeat new PIN">
+        <input id="confirmNewPin" type="password" maxlength="4" inputmode="numeric" placeholder="Repeat new PIN">
         ${state.error ? `<div class="error-text">${state.error}</div>` : ''}
         <button class="btn btn-primary" id="changePinBtn" onclick="doChangeProfilePin()">${iconHTML('key')}Change Password</button>
       </div>
@@ -2604,20 +2732,20 @@ async function doChangeProfilePin(){
   const currentPin = document.getElementById('currentPin').value.trim();
   const newPin = document.getElementById('newPin').value.trim();
   const confirmPin = document.getElementById('confirmNewPin').value.trim();
-  if (!currentPin || !newPin || !confirmPin){ state.error = 'Fill all password fields.'; render(); return; }
+  if (!currentPin || !newPin || !confirmPin){ state.error = 'Fill all PIN fields.'; render(); return; }
   if (currentPin !== String(state.profileDetails.pin || '')){ state.error = 'Current PIN is incorrect.'; render(); return; }
-  if (!/^\d{4,6}$/.test(newPin)){ state.error = 'New PIN must be 4 to 6 digits.'; render(); return; }
+  if (!PIN_PATTERN.test(newPin)){ state.error = 'New PIN must be exactly 4 numbers.'; render(); return; }
   if (newPin !== confirmPin){ state.error = 'New PIN and confirmation do not match.'; render(); return; }
   const btn = document.getElementById('changePinBtn');
   btn.disabled = true; btn.textContent = 'Updating...';
   try{
     await updateProfilePin(state.session, newPin);
     state.profileDetails.pin = newPin;
-    toast('Password updated');
+    toast('PIN updated');
     state.error = '';
     render();
   }catch(e){
-    state.error = 'Could not update password. Try again.';
+    state.error = 'Could not update PIN. Try again.';
     render();
   }
 }
@@ -2671,8 +2799,8 @@ function renderAddStaff(app){
         <input id="stName" placeholder="Full name">
         <label>Mobile number</label>
         <input id="stMobile" type="tel" maxlength="10" placeholder="9876543210">
-        <label>Set a PIN for staff login</label>
-        <input id="stPin" type="password" maxlength="6" placeholder="4-digit PIN">
+        <label>Set 4-digit PIN for staff login</label>
+        <input id="stPin" type="password" maxlength="4" inputmode="numeric" placeholder="4-digit PIN">
         <label>Designation (optional)</label>
         <input id="stDesig" placeholder="e.g. Sales Executive">
         <label>Employment Type</label>
@@ -2713,15 +2841,15 @@ function renderEditStaff(app){
   const s = state.staffList.find(x=>x.id===state.editingStaffId);
   if (!s){ go('adminStaff'); return; }
   app.innerHTML = `
-    ${topbar('Team','Edit Staff', s.mobile + ' · PIN not shown here')}
+    ${topbar('Team','Edit Staff', s.mobile + ' · Login details')}
     <div class="screen">
       <div class="card">
         <label>Staff name</label>
         <input id="editName" value="${s.name || ''}">
         <label>Staff mobile number</label>
         <input id="editMobile" type="tel" maxlength="10" value="${s.mobile || ''}">
-        <label>Staff password</label>
-        <input id="editPin" type="password" maxlength="12" value="${s.pin || ''}">
+        <label>Staff PIN</label>
+        <input id="editPin" type="password" maxlength="4" inputmode="numeric" value="${s.pin || ''}">
         <label>Designation</label>
         <input id="editDesig" value="${s.designation || ''}" placeholder="e.g. Sales Executive">
         <label>Employment Type</label>
@@ -2784,7 +2912,8 @@ async function doUpdateStaff(){
     graceMinutes: document.getElementById('editGrace').value,
     monthlySalary: document.getElementById('editSalary').value
   };
-  if (!data.name || !data.mobile || !data.pin){ state.error='Name, mobile and password are required.'; render(); return; }
+  if (!data.name || !data.mobile || !data.pin){ state.error='Name, mobile and PIN are required.'; render(); return; }
+  if (!PIN_PATTERN.test(data.pin)){ state.error='PIN must be exactly 4 numbers.'; render(); return; }
   const btn = document.getElementById('editStaffBtn');
   btn.disabled = true; btn.textContent = 'Saving...';
   try{
@@ -2817,11 +2946,12 @@ async function doAddStaff(){
   if (!data.name || !data.mobile || !data.pin){
     state.error='Name, mobile and PIN are required.'; render(); return;
   }
+  if (!PIN_PATTERN.test(data.pin)){ state.error='PIN must be exactly 4 numbers.'; render(); return; }
   const btn = document.getElementById('addStaffBtn');
   btn.disabled = true; btn.textContent = 'Adding...';
   try{
     await addStaff(state.session.businessId, data);
-    toast(`${data.name} added — share mobile + PIN with them to log in`);
+    toast(`${data.name} added — share mobile + 4-digit PIN with them to log in`);
     go('adminStaff');
   }catch(e){
     state.error = e.message; render();
