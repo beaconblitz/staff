@@ -1037,9 +1037,18 @@ async function loginUser(mobile, pin){
   if (!idxSnap.exists()) throw new Error("We couldn't find an account with that mobile number.");
   const idx = idxSnap.val();
 
+  if (idx.role === 'main' || idx.role === 'mainAdmin'){
+    const adminSnap = await db.ref('mainAdmins/' + mobile).once('value');
+    const admin = adminSnap.val();
+    if (!admin) throw new Error('Main admin login record is missing. Run the login reset SQL again.');
+    if (admin.pin !== pin) throw new Error('Incorrect PIN.');
+    return { role:'mainAdmin', mobile, name: admin.name || 'Main Admin' };
+  }
+
   if (idx.role === 'admin'){
     const bizSnap = await db.ref('businesses/' + idx.businessId).once('value');
     const biz = bizSnap.val();
+    if (!biz) throw new Error('Business login record is missing. Ask main admin to reset this login.');
     assertBusinessCanUseApp(biz);
     if (biz.pin !== pin) throw new Error('Incorrect PIN.');
     return {
@@ -1055,9 +1064,11 @@ async function loginUser(mobile, pin){
   } else {
     const staffSnap = await db.ref('businesses/' + idx.businessId + '/staff/' + idx.staffId).once('value');
     const staff = staffSnap.val();
+    if (!staff) throw new Error('Staff login record is missing. Ask admin to reset this login.');
     if (staff.pin !== pin) throw new Error('Incorrect PIN.');
     const bizSnap = await db.ref('businesses/' + idx.businessId).once('value');
     const biz = bizSnap.val();
+    if (!biz) throw new Error('Business login record is missing. Ask admin to reset this login.');
     assertBusinessCanUseApp(biz);
     return {
       role:'staff',
