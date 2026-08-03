@@ -819,6 +819,11 @@ const PLAN_CATALOG = {
 };
 const DEFAULT_PLAN = 'starter';
 const DEFAULT_TRIAL_DAYS = 14;
+const APP_SUPPORT = {
+  whatsapp: '919999999999',
+  email: 'support@beaconblitz.in',
+  brand: 'Beaconblitz Staff'
+};
 
 function toast(msg){
   const host = document.getElementById('toastHost');
@@ -888,6 +893,34 @@ function assertBusinessCanUseApp(biz){
   const info = businessAccountInfo(biz || {});
   if (info.effectiveStatus === 'suspended') throw new Error('This business account is suspended. Contact main admin.');
   if (info.effectiveStatus === 'expired') throw new Error('This business account has expired. Contact main admin to renew.');
+}
+
+function accountWarningHTML(){
+  if (!state.session || !state.session.businessId) return '';
+  if (state.session.role !== 'admin') return '';
+  const status = state.session.accountStatus || '';
+  if (!status || status === 'active') return '';
+  const label = status === 'trial' ? 'Trial account' : status;
+  return `<div class="config-warning">
+    <strong>${escapeHTML(label)}</strong>: Please renew or activate this business from Main Admin before expiry to avoid login interruption.
+  </div>`;
+}
+
+function csvCell(value){
+  const text = String(value == null ? '' : value);
+  return `"${text.replace(/"/g, '""')}"`;
+}
+
+function downloadTextFile(filename, text, type){
+  const blob = new Blob([text], { type: type || 'text/plain;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(()=>URL.revokeObjectURL(url), 500);
 }
 
 function saveSession(session){
@@ -1109,15 +1142,30 @@ async function addStaff(businessId, data){
 }
 
 async function updateStaff(businessId, staffId, data){
-  await db.ref('businesses/' + businessId + '/staff/' + staffId).update({
-    name: data.name,
-    designation: data.designation || '',
-    expectedCheckIn: data.expectedCheckIn || '09:30',
-    expectedCheckOut: data.expectedCheckOut || '18:00',
-    graceMinutes: data.graceMinutes != null && data.graceMinutes !== '' ? Number(data.graceMinutes) : 30,
-    monthlySalary: data.monthlySalary != null && data.monthlySalary !== '' ? Number(data.monthlySalary) : 0,
-    employmentType: data.employmentType || 'full'
-  });
+  const staffSnap = await db.ref('businesses/' + businessId + '/staff/' + staffId).once('value');
+  const existing = staffSnap.val() || {};
+  const cleanMobile = String(data.mobile || existing.mobile || '').trim();
+  const cleanPin = String(data.pin || existing.pin || '').trim();
+  if (!/^\d{10}$/.test(cleanMobile)) throw new Error('Enter a valid 10 digit staff mobile number.');
+  if (!cleanPin) throw new Error('Enter staff login password.');
+  if (cleanMobile !== existing.mobile){
+    const mobileSnap = await db.ref('mobileIndex/' + cleanMobile).once('value');
+    if (mobileSnap.exists()) throw new Error('This mobile number is already used by another account.');
+  }
+
+  const updates = {};
+  updates['businesses/' + businessId + '/staff/' + staffId + '/name'] = data.name;
+  updates['businesses/' + businessId + '/staff/' + staffId + '/mobile'] = cleanMobile;
+  updates['businesses/' + businessId + '/staff/' + staffId + '/pin'] = cleanPin;
+  updates['businesses/' + businessId + '/staff/' + staffId + '/designation'] = data.designation || '';
+  updates['businesses/' + businessId + '/staff/' + staffId + '/expectedCheckIn'] = data.expectedCheckIn || '09:30';
+  updates['businesses/' + businessId + '/staff/' + staffId + '/expectedCheckOut'] = data.expectedCheckOut || '18:00';
+  updates['businesses/' + businessId + '/staff/' + staffId + '/graceMinutes'] = data.graceMinutes != null && data.graceMinutes !== '' ? Number(data.graceMinutes) : 30;
+  updates['businesses/' + businessId + '/staff/' + staffId + '/monthlySalary'] = data.monthlySalary != null && data.monthlySalary !== '' ? Number(data.monthlySalary) : 0;
+  updates['businesses/' + businessId + '/staff/' + staffId + '/employmentType'] = data.employmentType || 'full';
+  if (existing.mobile && existing.mobile !== cleanMobile) updates['mobileIndex/' + existing.mobile] = null;
+  updates['mobileIndex/' + cleanMobile] = { role:'staff', businessId, staffId };
+  await db.ref().update(updates);
 }
 
 async function deleteStaffAndData(businessId, staffId){
@@ -1673,6 +1721,9 @@ function render(){
     landing: renderLanding,
     login: renderLogin,
     registerBiz: renderRegisterBiz,
+    mainCreateBusiness: renderMainCreateBusiness,
+    support: renderSupport,
+    legal: renderLegal,
     mainAdminHome: renderMainAdminHome,
     mainBusinessDetails: renderMainBusinessDetails,
     adminHome: renderAdminHome,
@@ -1738,6 +1789,11 @@ function renderLanding(app){
         <p class="login-choice-copy">Choose your category on the next screen and continue with phone number and password.</p>
         <button class="btn btn-primary" onclick="go('login')">${iconHTML('user')}Log in</button>
         <div style="height:10px"></div><button class="btn btn-outline" onclick="go('registerBiz')">Register a new business</button>
+        <div style="height:10px"></div>
+        <div style="display:flex; gap:10px;">
+          <button class="btn btn-ghost" onclick="go('support')">${iconHTML('message')}Support</button>
+          <button class="btn btn-ghost" onclick="go('legal')">${iconHTML('checkSquare')}Legal</button>
+        </div>
       </div>
     </div>`;
 }
@@ -1864,6 +1920,10 @@ function renderRegisterBiz(app){
         <input id="regMobile" type="tel" maxlength="10" placeholder="9876543210">
         <label>Create a PIN</label>
         <input id="regPin" type="password" maxlength="6" placeholder="4-digit PIN">
+        <div style="display:flex; align-items:flex-start; gap:8px; margin:-6px 0 14px;">
+          <input type="checkbox" id="regTerms" style="width:auto; margin:2px 0 0;">
+          <label for="regTerms" style="text-transform:none; font-weight:500; font-size:13px; letter-spacing:normal; margin:0; color:var(--muted);">I agree to Terms, Privacy, and staff location consent rules.</label>
+        </div>
         <div style="display:flex; align-items:center; gap:8px; margin:-6px 0 14px;">
           <input type="checkbox" id="regRememberMe" checked style="width:auto; margin:0;">
           <label for="regRememberMe" style="text-transform:none; font-weight:500; font-size:13px; letter-spacing:normal; margin:0; color:var(--muted);">Keep me logged in on this device</label>
@@ -1886,6 +1946,9 @@ async function doRegister(){
   };
   if (!data.adminName || !data.businessName || !data.mobile || !data.pin){
     state.error = 'Please fill in all required fields.'; render(); return;
+  }
+  if (!document.getElementById('regTerms').checked){
+    state.error = 'Please accept Terms and Privacy before creating a business.'; render(); return;
   }
   const btn = document.getElementById('regBtn');
   btn.disabled = true; btn.textContent = 'Creating...';
@@ -1922,6 +1985,54 @@ async function doRegister(){
   }
 }
 
+function renderSupport(app){
+  const wa = `https://wa.me/${APP_SUPPORT.whatsapp}?text=${encodeURIComponent('Hi, I need help with ' + APP_SUPPORT.brand)}`;
+  app.innerHTML = `
+    ${topbar('Help','Support','Get help with setup, billing, or account access')}
+    <div class="screen">
+      <div class="card">
+        <div class="section-title">Contact Support</div>
+        <div class="staff-sub" style="margin-bottom:14px;">Use this for onboarding, payment renewal, login reset, or technical issues.</div>
+        <a class="btn btn-marigold" style="text-decoration:none;" href="${wa}" target="_blank" rel="noopener">${iconHTML('smartphone')}WhatsApp Support</a>
+        <div style="height:10px"></div>
+        <a class="btn btn-outline" style="text-decoration:none;" href="mailto:${APP_SUPPORT.email}">${iconHTML('message')}${APP_SUPPORT.email}</a>
+      </div>
+      <div class="card">
+        <div class="section-title">Before Asking</div>
+        <div class="staff-sub" style="line-height:1.55;">
+          Keep business name, admin mobile number, staff mobile number, and the issue screenshot ready. For location issues, staff must open the app and allow location once.
+        </div>
+      </div>
+      <button class="btn btn-ghost" onclick="go(state.session ? (state.session.role==='mainAdmin'?'mainAdminHome':state.session.role==='admin'?'adminHome':'staffHome') : 'landing')">${iconHTML('arrowLeft')}Back</button>
+    </div>`;
+}
+
+function renderLegal(app){
+  app.innerHTML = `
+    ${topbar('Policy','Terms & Privacy','Customer and staff data handling')}
+    <div class="screen">
+      <div class="card">
+        <div class="section-title">Terms</div>
+        <div class="staff-sub" style="line-height:1.55;">
+          This app is provided for attendance, staff management, reports, and business communication. Business owners are responsible for adding only authorized staff and keeping login details private.
+        </div>
+      </div>
+      <div class="card">
+        <div class="section-title">Privacy</div>
+        <div class="staff-sub" style="line-height:1.55;">
+          The app stores profile, attendance, leave, complaint, chat, salary, and location records needed for business use. Location is used for attendance and live location only after staff permission.
+        </div>
+      </div>
+      <div class="card">
+        <div class="section-title">Location Consent</div>
+        <div class="staff-sub" style="line-height:1.55;">
+          Staff should be informed before live location is enabled. Admin can see the last saved location after staff enables location permission in the app.
+        </div>
+      </div>
+      <button class="btn btn-ghost" onclick="go(state.session ? (state.session.role==='mainAdmin'?'mainAdminHome':state.session.role==='admin'?'adminHome':'staffHome') : 'landing')">${iconHTML('arrowLeft')}Back</button>
+    </div>`;
+}
+
 function mainAdminNav(active){
   return `<div class="bottom-nav">
     <button class="${active==='mainAdminHome'?'active':''}" onclick="go('mainAdminHome')"><span class="icon">${iconHTML('briefcase')}</span>Business</button>
@@ -1941,6 +2052,7 @@ function renderMainAdminHome(app){
         <div class="stat"><div class="num">${totalStaff}</div><div class="lbl">Staff</div></div>
         <div class="stat"><div class="num">${blockedBusinesses}</div><div class="lbl">Blocked</div></div>
       </div>
+      <button class="btn btn-marigold" onclick="go('mainCreateBusiness')">${iconHTML('plus')}Create Customer Business</button>
       <div class="card">
         ${state.allBusinesses.length===0 ? `<div class="empty">No businesses found.</div>` :
           state.allBusinesses.map(b=>`
@@ -1967,6 +2079,54 @@ function renderMainAdminHome(app){
 function openMainBusiness(businessId){
   state.selectedBusinessId = businessId;
   go('mainBusinessDetails');
+}
+
+function renderMainCreateBusiness(app){
+  app.innerHTML = `
+    ${topbar('Main Admin','Create Customer','Add a paid or trial customer business')}
+    <div class="screen">
+      <div class="card">
+        <label>Admin name</label>
+        <input id="mainRegName" placeholder="Business owner / admin name">
+        <label>Business / firm name</label>
+        <input id="mainRegBiz" placeholder="Business name">
+        <label>Sector</label>
+        <input id="mainRegSector" placeholder="Retail, agency, service, etc.">
+        <label>Admin mobile number</label>
+        <input id="mainRegMobile" type="tel" maxlength="10">
+        <label>Admin password</label>
+        <input id="mainRegPin" type="password" maxlength="12">
+        <div class="config-warning" style="margin-bottom:14px;">Confirm the customer has agreed to Terms, Privacy, and staff location consent before onboarding.</div>
+        ${state.error ? `<div class="error-text">${state.error}</div>` : ''}
+        <button class="btn btn-marigold" id="mainCreateBizBtn" onclick="doMainCreateBusiness()">${iconHTML('plus')}Create Customer</button>
+        <div style="height:10px"></div>
+        <button class="btn btn-ghost" onclick="go('mainAdminHome')">${iconHTML('arrowLeft')}Back</button>
+      </div>
+    </div>
+    ${mainAdminNav('mainAdminHome')}`;
+}
+
+async function doMainCreateBusiness(){
+  const data = {
+    adminName: document.getElementById('mainRegName').value.trim(),
+    businessName: document.getElementById('mainRegBiz').value.trim(),
+    sector: document.getElementById('mainRegSector').value.trim(),
+    mobile: document.getElementById('mainRegMobile').value.trim(),
+    pin: document.getElementById('mainRegPin').value.trim()
+  };
+  if (!data.adminName || !data.businessName || !data.mobile || !data.pin){
+    state.error = 'Admin name, business, mobile and password are required.'; render(); return;
+  }
+  const btn = document.getElementById('mainCreateBizBtn');
+  btn.disabled = true; btn.textContent = 'Creating...';
+  try{
+    const businessId = await registerBusiness(data);
+    toast('Customer business created');
+    state.selectedBusinessId = businessId;
+    go('mainBusinessDetails');
+  }catch(e){
+    state.error = e.message || 'Could not create customer.'; render();
+  }
 }
 
 function renderMainBusinessDetails(app){
@@ -2147,6 +2307,7 @@ function renderAdminHome(app){
         <div class="stat"><div class="num">${state.staffList.length}</div><div class="lbl">Staff</div></div>
         <div class="stat"><div class="num">${todayIn.length}</div><div class="lbl">Checked in today</div></div>
       </div>
+      ${accountWarningHTML()}
       ${state.session.accountStatus ? `
         <div class="card">
           <div style="display:flex; justify-content:space-between; align-items:center; gap:10px;">
@@ -2181,6 +2342,8 @@ function renderAdminHome(app){
         ${tileHTML('grid','#E3F0FF','Manage Apps',"go('adminApps')")}
         ${tileHTML('pin','#FDE3EE','Live Location',"go('adminLiveMap')")}
         ${tileHTML('message','#E3F0FF','Chat',"go('adminChatList')")}
+        ${tileHTML('smartphone','#FFF3D6','Support',"go('support')")}
+        ${tileHTML('checkSquare','#E9E6FF','Legal',"go('legal')")}
       </div>
       ${state.apps.length ? `
         <div class="section-title">Your Apps</div>
@@ -2329,6 +2492,11 @@ function renderProfile(app){
         <input id="confirmNewPin" type="password" maxlength="6" placeholder="Repeat new PIN">
         ${state.error ? `<div class="error-text">${state.error}</div>` : ''}
         <button class="btn btn-primary" id="changePinBtn" onclick="doChangeProfilePin()">${iconHTML('key')}Change Password</button>
+      </div>
+
+      <div class="card" style="display:flex; gap:10px;">
+        <button class="btn btn-outline" onclick="go('support')">${iconHTML('smartphone')}Support</button>
+        <button class="btn btn-outline" onclick="go('legal')">${iconHTML('checkSquare')}Legal</button>
       </div>
 
       <button class="btn btn-outline" style="color:var(--danger);" onclick="confirmLogout()">${iconHTML('logout')}Logout</button>
@@ -2515,6 +2683,10 @@ function renderEditStaff(app){
       <div class="card">
         <label>Staff name</label>
         <input id="editName" value="${s.name || ''}">
+        <label>Staff mobile number</label>
+        <input id="editMobile" type="tel" maxlength="10" value="${s.mobile || ''}">
+        <label>Staff password</label>
+        <input id="editPin" type="password" maxlength="12" value="${s.pin || ''}">
         <label>Designation</label>
         <input id="editDesig" value="${s.designation || ''}" placeholder="e.g. Sales Executive">
         <label>Employment Type</label>
@@ -2568,6 +2740,8 @@ async function doDeleteStaff(){
 async function doUpdateStaff(){
   const data = {
     name: document.getElementById('editName').value.trim(),
+    mobile: document.getElementById('editMobile').value.trim(),
+    pin: document.getElementById('editPin').value.trim(),
     designation: document.getElementById('editDesig').value.trim(),
     employmentType: document.getElementById('editEmpType').value,
     expectedCheckIn: document.getElementById('editCheckIn').value,
@@ -2575,7 +2749,7 @@ async function doUpdateStaff(){
     graceMinutes: document.getElementById('editGrace').value,
     monthlySalary: document.getElementById('editSalary').value
   };
-  if (!data.name){ state.error='Name is required.'; render(); return; }
+  if (!data.name || !data.mobile || !data.pin){ state.error='Name, mobile and password are required.'; render(); return; }
   const btn = document.getElementById('editStaffBtn');
   btn.disabled = true; btn.textContent = 'Saving...';
   try{
@@ -2891,6 +3065,7 @@ function renderAdminAttendance(app){
       </div>
 
       <button class="btn btn-outline" onclick="go('addManualAttendance')">${iconHTML('plus')}Add Manual Entry (Calendar)</button>
+      <button class="btn btn-marigold" onclick="exportAttendanceCSV()">${iconHTML('wallet')}Export CSV Report</button>
 
       <div class="card">
         ${dateKeys.length===0 ? `<div class="empty">No attendance in this range.</div>` :
@@ -2929,6 +3104,42 @@ function renderAdminAttendance(app){
 function setReportStaff(id){ state.report.staffId = id; render(); }
 function setReportRange(range){ state.report.range = range; render(); }
 function setReportEmpType(type){ state.report.empType = type; render(); }
+
+function filteredAttendanceForReport(){
+  const start = rangeStart(state.report.range);
+  let filtered = state.attendance.filter(a => (a.ts||0) >= start);
+  if (state.report.staffId !== 'all') filtered = filtered.filter(a => a.staffId === state.report.staffId);
+  if (state.report.empType !== 'all'){
+    const idsOfType = new Set(state.staffList.filter(s=> (s.employmentType||'full')===state.report.empType).map(s=>s.id));
+    filtered = filtered.filter(a => idsOfType.has(a.staffId));
+  }
+  return filtered.slice().sort((a,b)=>(a.ts||0)-(b.ts||0));
+}
+
+function exportAttendanceCSV(){
+  const rows = filteredAttendanceForReport();
+  const header = ['Date','Time','Staff Name','Mobile','Type','Manual','Latitude','Longitude','Map Link'];
+  const lines = [header.map(csvCell).join(',')];
+  rows.forEach(a=>{
+    const s = state.staffList.find(x=>x.id===a.staffId) || {};
+    const d = a.ts ? new Date(a.ts) : null;
+    const mapLink = a.lat && a.lng ? `https://www.google.com/maps?q=${a.lat},${a.lng}` : '';
+    lines.push([
+      d ? d.toLocaleDateString('en-IN') : '',
+      d ? d.toLocaleTimeString('en-IN', { hour:'2-digit', minute:'2-digit' }) : '',
+      s.name || a.staffName || '',
+      s.mobile || '',
+      a.type === 'in' ? 'Check In' : 'Check Out',
+      a.manual ? 'Yes' : 'No',
+      a.lat || '',
+      a.lng || '',
+      mapLink
+    ].map(csvCell).join(','));
+  });
+  const filename = `${(state.session.businessName || 'attendance').replace(/[^a-z0-9]+/gi,'-').toLowerCase()}-${state.report.range}-attendance.csv`;
+  downloadTextFile(filename, lines.join('\n'), 'text/csv;charset=utf-8');
+  toast('Attendance CSV downloaded');
+}
 
 function openEditAttendance(recordId){
   state.editingAttendanceId = recordId;
@@ -3332,6 +3543,8 @@ function renderStaffHome(app){
         ${tileHTML('megaphone','#FDE7E7','Complaints',"go('complaintForm')")}
         ${tileHTML('trophy','#FFF3D6','Rewards',"go('rewards')")}
         ${tileHTML('message','#E3F0FF','Chat with Admin',"openStaffChat()")}
+        ${tileHTML('smartphone','#FFF3D6','Support',"go('support')")}
+        ${tileHTML('checkSquare','#E9E6FF','Legal',"go('legal')")}
       </div>
       ${state.apps.length ? `
         <div class="section-title">Company Apps</div>
