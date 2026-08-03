@@ -1019,6 +1019,7 @@ async function loginUser(mobile, pin){
       businessId: idx.businessId,
       name: biz.adminName,
       businessName: biz.name,
+      mobile: biz.mobile || mobile,
       plan: biz.plan || DEFAULT_PLAN,
       accountStatus: businessAccountInfo(biz).effectiveStatus,
       staffLimit: businessAccountInfo(biz).staffLimit
@@ -1053,6 +1054,7 @@ async function validateSavedSession(session){
   return {
     ...session,
     businessName: biz.name || session.businessName,
+    mobile: biz.mobile || session.mobile || '',
     plan: info.plan,
     accountStatus: info.effectiveStatus,
     staffLimit: info.staffLimit
@@ -1081,7 +1083,7 @@ async function getProfileDetails(session){
       role: 'Admin',
       name: biz.adminName || session.name,
       businessName: biz.name || session.businessName,
-      mobile: biz.mobile || '',
+      mobile: biz.mobile || session.mobile || '',
       sector: biz.sector || '',
       photo: biz.profilePhoto || '',
       pin: biz.pin || ''
@@ -2024,6 +2026,7 @@ async function doRegister(){
       businessId,
       name:data.adminName,
       businessName:data.businessName,
+      mobile:data.mobile,
       plan: DEFAULT_PLAN,
       accountStatus: 'trial',
       staffLimit: PLAN_CATALOG[DEFAULT_PLAN].staffLimit
@@ -2415,6 +2418,7 @@ async function doSaveMainBusinessAdminLogin(){
   try{
     await updateBusinessAdminLogin(b.id, b.mobile || '', newMobile, newPin);
     if (state.session && state.session.role === 'admin' && state.session.businessId === b.id){
+      state.session.mobile = newMobile;
       state.session.adminMobile = newMobile;
       saveSession(state.session);
     }
@@ -2619,7 +2623,7 @@ function renderProfile(app){
           <span style="color:var(--indigo);">${iconHTML('phone')}</span>
         </div>
         <div class="attendance-item">
-          <div class="att-left"><div class="staff-sub">${state.session.role === 'admin' ? 'Business' : 'Designation'}</div><div class="staff-name" style="font-size:14px;">${escapeHTML(state.session.role === 'admin' ? (d.sector || 'Not set') : (d.designation || 'Not set'))}</div></div>
+          <div class="att-left"><div class="staff-sub">${state.session.role === 'admin' ? 'Business' : 'Designation'}</div><div class="staff-name" style="font-size:14px;">${escapeHTML(state.session.role === 'admin' ? (d.businessName || 'Not set') : (d.designation || 'Not set'))}</div></div>
           <span style="color:var(--indigo);">${iconHTML('briefcase')}</span>
         </div>
       </div>
