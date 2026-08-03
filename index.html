@@ -1314,6 +1314,20 @@ async function updateBusinessAdminLogin(businessId, currentMobile, newMobile, ne
   await db.ref().update(updates);
 }
 
+async function updateOwnAdminBusinessDetails(session, data){
+  const businessName = String(data.businessName || '').trim();
+  const mobile = String(data.mobile || '').trim();
+  const pin = String(data.pin || '').trim();
+  if (!businessName) throw new Error('Business name is required.');
+  if (!/^\d{10}$/.test(mobile)) throw new Error('Enter a valid 10 digit admin mobile number.');
+  if (!PIN_PATTERN.test(pin)) throw new Error('Admin PIN must be exactly 4 numbers.');
+  const bizSnap = await db.ref('businesses/' + session.businessId).once('value');
+  const biz = bizSnap.val() || {};
+  await updateBusinessAdminLogin(session.businessId, session.mobile || biz.mobile || '', mobile, pin);
+  await db.ref('businesses/' + session.businessId).update({ name: businessName });
+  return { businessName, mobile, pin };
+}
+
 function listenAttendance(businessId, staffId){
   if (state.attendanceListenerRef) state.attendanceListenerRef.off();
   const ref = db.ref('businesses/' + businessId + '/attendance').limitToLast(1000);
@@ -2648,6 +2662,20 @@ function renderProfile(app){
         </div>
       ` : ''}
 
+      ${state.session.role === 'admin' ? `
+        <div class="card">
+          <div class="section-title">${iconHTML('briefcase')} Business Login</div>
+          <div class="staff-sub" style="margin-bottom:14px;">Update your business name, admin mobile number, and 4-digit PIN.</div>
+          <label>Business name</label>
+          <input id="adminBizName" value="${escapeHTML(d.businessName || state.session.businessName || '')}">
+          <label>Admin mobile number</label>
+          <input id="adminBizMobile" type="tel" maxlength="10" inputmode="numeric" value="${escapeHTML(d.mobile || state.session.mobile || '')}">
+          <label>Admin 4-digit PIN</label>
+          <input id="adminBizPin" type="password" maxlength="4" inputmode="numeric" value="${escapeHTML(d.pin || '')}">
+          <button class="btn btn-marigold" id="adminBizBtn" onclick="doSaveAdminBusinessDetails()">${iconHTML('checkSquare')}Save Business Login</button>
+        </div>
+      ` : ''}
+
       <div class="card">
         <div class="section-title">${iconHTML('key')} Change PIN</div>
         <div class="staff-sub" style="margin-bottom:14px;">Use a new 4-digit PIN for your next login.</div>
@@ -2730,6 +2758,34 @@ function enableLiveLocationSetup(){
   startLiveLocationTracking();
   pushLiveLocation();
   toast('One-time live location setup started. Allow location if your browser asks.');
+}
+
+async function doSaveAdminBusinessDetails(){
+  if (!state.session || state.session.role !== 'admin') return;
+  const data = {
+    businessName: document.getElementById('adminBizName').value.trim(),
+    mobile: document.getElementById('adminBizMobile').value.trim(),
+    pin: document.getElementById('adminBizPin').value.trim()
+  };
+  const btn = document.getElementById('adminBizBtn');
+  btn.disabled = true; btn.textContent = 'Saving...';
+  try{
+    const updated = await updateOwnAdminBusinessDetails(state.session, data);
+    state.session.businessName = updated.businessName;
+    state.session.mobile = updated.mobile;
+    state.session.adminMobile = updated.mobile;
+    saveSession(state.session);
+    if (state.profileDetails){
+      state.profileDetails.businessName = updated.businessName;
+      state.profileDetails.mobile = updated.mobile;
+      state.profileDetails.pin = updated.pin;
+    }
+    toast('Business login updated');
+    state.error = '';
+  }catch(e){
+    state.error = e.message || 'Could not update business login.';
+  }
+  render();
 }
 
 async function doChangeProfilePin(){
